@@ -52,7 +52,6 @@ def plt_load(filename, raw_filename):
     if header[0][0:7] == 'PLT V1  ':
         gimp.pdb.gimp_message('Not a valid plt file' + header[0][0:8])
         return 1
-    num_layers = 10
     # Next 8 bytes contain width and height
     (width, height) = struct.unpack('<II', f.read(8))
     # The rest contains (color, layer) tuples (both unsigned char (?))
@@ -67,11 +66,11 @@ def plt_load(filename, raw_filename):
     img.disable_undo()
 
     # Create Layers
-    layerlist = []
-    for pos, layername in enumerate(plt_layernames):
+    layerlist  = []
+    for layername in plt_layernames:
         lay = gimp.Layer(img, layername, width, height, GRAYA_IMAGE, 100, NORMAL_MODE)
         lay.fill(TRANSPARENT_FILL)
-        img.insert_layer(layer = lay, position = pos)
+        img.insert_layer(layer = lay, position = 0)
         layerlist.append(lay)
 
     # Write data to layers
@@ -178,11 +177,11 @@ def plt_create_layers(img):
     for layer in img.layers:
         img_layernames.append(layer.name.lower())
 
-    for pos, layername in enumerate(plt_layernames):
+    for layername in plt_layernames:
         if layername not in img_layernames:
             lay = gimp.Layer(img, layername, img.width, img.height, layer_type, 100, NORMAL_MODE)
             lay.fill(TRANSPARENT_FILL)
-            img.insert_layer(layer = lay, position = pos)
+            img.insert_layer(layer = lay, position = 0)
 
 
 def register_load_handlers():

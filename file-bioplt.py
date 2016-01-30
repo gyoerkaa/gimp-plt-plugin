@@ -198,12 +198,12 @@ def register_save_handlers():
 
 register(
     'file-bioplt-load', #name
-    'load a Bioware Packed Layer Texture (.plt)', #description
-    'load a Bioware Packed Layer Texture (.plt)',
-    'Symmetric', #author
+    'load a Packed Layer Texture (.plt)', #description
+    'load a Packed Layer Texture (.plt)',
+    'Attila Gyoerkoes', #author
     'GPL v3', #copyright
     '2015', #year
-    'Bioware Packed Layer Texture',
+    'Packed Layer Texture',
     None, #image type
     [   #input args (type, name, description, default [, extra])
         (PF_STRING, 'filename', 'The name of the file to load', None),
@@ -218,12 +218,12 @@ register(
 
 register(
     'file-bioplt-save', #name
-    'save a Bioware Packed Layer Texture (.plt)', #description
-    'save a Bioware Packed Layer Texture (.plt)',
-    'Symmetric', #author
+    'save a Packed Layer Texture (.plt)', #description
+    'save a Packed Layer Texture (.plt)',
+    'Attila Gyoerkoes', #author
     'GPL v3', #copyright
     '2015', #year
-    'Bioware Packed Layer Texture',
+    'Packed Layer Texture',
     '*',
     [   #input args (type, name, description, default [, extra])
         (PF_IMAGE, "image", "Input image", None),
@@ -240,9 +240,9 @@ register(
 
 register(
     'file-bioplt-createlayers', #name
-    'Create Bioware Packed Layer Texture (.plt)', #description
-    'Create the layers for a Bioware Packed Layer Texture (.plt)',
-    'Symmetric', #author
+    'Create Packed Layer Texture (.plt)', #description
+    'Create the layers for a Packed Layer Texture (.plt)',
+    'Attila Gyoerkoes', #author
     'GPL v3', #copyright
     '2015', #year
     'Plt: Create Layers',

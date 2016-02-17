@@ -75,7 +75,7 @@ def plt_load(filename, raw_filename):
 
     # Write data to layers
     numvals = len(px)
-    gimp.progress_init("Progress ...")
+    gimp.progress_init("Writing data to Gimp layers ...")
     gimp.progress_update(0)
 
     # for speed
@@ -83,10 +83,10 @@ def plt_load(filename, raw_filename):
     l_float = float
     l_floor = math.floor
 
-    for i, (value, layer_idx) in enumerate(px):
+    for i, (val, layer_idx) in enumerate(px):
         x = l_int(i % width)
         y = height - l_int(l_floor(i / width)) - 1
-        layerlist[layer_idx].set_pixel(x, y, [value, 255])
+        layerlist[layer_idx].set_pixel(x, y, [val, 255])
         gimp.progress_update(l_float(i)/l_float(numvals))
 
     img.enable_undo()
@@ -110,30 +110,31 @@ def plt_save(img, drawable, filename, raw_filename):
     # ['Skin', 'Hair', 'Metal1', 'Metal2', 'Cloth1', 'Cloth2', 'Leather1',
     #  'Leather2', 'Tattoo1', 'Tattoo2']
     data = []
-    gimp.progress_init("Reading pixels from Gimp layers")
+    gimp.progress_init("Reading data from Gimp layers ...")
     gimp.progress_update(0)
     numpx = width * height
 
     # for speed
-    l_int   = int
-    l_float = float
-    l_floor = math.floor
+    l_int       = int
+    l_float     = float
+    l_floor     = math.floor
+    l_picklayer = img.pick_correlate_layer
 
     if img.base_type == GRAY:
         for i in range(numpx):
             x = l_int(i % width)
             y = height - l_int(l_floor(i / width)) - 1
-            layer = img.pick_correlate_layer(x, y)
+            layer = l_picklayer(x, y)
             if layer >= 0:
-                pxValue = layer.get_pixel(x,y)[0]
+                pxVal = layer.get_pixel(x,y)[0]
                 try:
                     pxLayer = plt_layernames.index(layer.name.lower())
                 except ValueError:
                     pxLayer = 0
             else:
-                pxValue = 255
+                pxVal = 255
                 pxLayer = 0
-            data.append(pxValue)
+            data.append(pxVal)
             data.append(pxLayer)
             gimp.progress_update(l_float(i)/l_float(numpx))
 
@@ -141,17 +142,17 @@ def plt_save(img, drawable, filename, raw_filename):
         for i in range(numpx):
             x = l_int(i % width)
             y = height - l_int(l_floor(i / width)) - 1
-            layer = img.pick_correlate_layer(x, y)
+            layer = l_picklayer(x, y)
             if layer >= 0:
-                pxValue = (layer.get_pixel(x,y)[0] + layer.get_pixel(x,y)[1] + layer.get_pixel(x,y)[2]) / 3
+                pxVal = (layer.get_pixel(x,y)[0] + layer.get_pixel(x,y)[1] + layer.get_pixel(x,y)[2]) / 3
                 try:
                     pxLayer = plt_layernames.index(layer.name.lower())
                 except ValueError:
                     pxLayer = 0
             else:
-                pxValue = 255
+                pxVal = 255
                 pxLayer = 0
-            data.append(pxValue)
+            data.append(pxVal)
             data.append(pxLayer)
             gimp.progress_update(l_float(i)/l_float(numpx))
 

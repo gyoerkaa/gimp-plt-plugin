@@ -1,20 +1,13 @@
 #include <libgimp/gimp.h>
 
-#include "string.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
 
-#define LOAD_PROCEDURE "file-bioplt-load"
-#define SAVE_PROCEDURE "file-bioplt-save"
-
-static void query (void);
-
-static void run (const gchar      *name,
-                 gint              nparams,
-                 const GimpParam  *param,
-                 gint             *nreturn_vals,
-                 GimpParam       **return_vals);
+#include "file-bioplt.h"
 
 
-static void query (void)
+static void query(void)
 {
     // Load arguments
     static const GimpParamDef load_args[] =
@@ -78,11 +71,11 @@ static void query (void)
 }
 
 
-static void run (const gchar      *name,
-                 gint              nparams,
-                 const GimpParam  *param,
-                 gint             *nreturn_vals,
-                 GimpParam       **return_vals)
+static void run(const gchar      *name,
+                gint              nparams,
+                const GimpParam  *param,
+                gint             *nreturn_vals,
+                GimpParam       **return_vals)
 {
     static GimpParam return_values[2];
     GimpPDBStatusType status = GIMP_PDB_SUCCESS;
@@ -103,17 +96,15 @@ static void run (const gchar      *name,
     run_mode = (GimpRunMode)param[0].data.d_int32;
     if (!strcmp(name, LOAD_PROCEDURE))
     {
+        // No import options/interactivity right now, so every run mode is
+        // handled the same way
         switch (run_mode)
         {
             case GIMP_RUN_INTERACTIVE:
-                /* Get options last values */
-                break;
             case GIMP_RUN_WITH_LAST_VALS:
-                break;
             case GIMP_RUN_NONINTERACTIVE:
-                // TODO: Check nparams, get values from param
-                break;
             default:
+                status = plt_load(param[1].data.d_string, &imageID);
                 break;
         }
 
@@ -126,17 +117,16 @@ static void run (const gchar      *name,
         imageID    = param[1].data.d_int32;
         drawableID = param[2].data.d_int32;
 
+        // No import options/interactivity right now, so every run mode is
+        // handled the same way
         switch (run_mode)
         {
             case GIMP_RUN_INTERACTIVE:
-                /* Get options last values */
-                break;
             case GIMP_RUN_WITH_LAST_VALS:
-                break;
             case GIMP_RUN_NONINTERACTIVE:
-                break;
             default:
-               break;
+                status = plt_save(imageID, drawableID);
+                break;
         }
 
     }
@@ -144,6 +134,83 @@ static void run (const gchar      *name,
     {
         return_values[0].data.d_status = GIMP_PDB_CALLING_ERROR;
     }
+}
+
+
+static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
+{
+    FILE *plt_file = 0;
+
+    uint8_t  plt_version[8];
+    uint32_t plt_width  = 0;
+    uint32_t plt_height = 0;
+
+    uint32_t numPx = 0;
+    uint32_t px_value = 0;
+    uint32_t px_layer = 0;
+
+    gint32 newImgID   = -1;
+    gint32 newLayerID = -1;
+    gint32 layerIDs[NUM_PLT_LAYERS];
+
+    plt_file = fopen(filename, "rb");
+    if(plt_file == 0)
+    {
+        g_message("Error opening file.\n");
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
+
+    // Header
+    fread(&plt_version, 1, 8, plt_file);
+    fseek(plt_file, 8, SEEK_CUR); // These 8 bytes don't matter
+    fread(&plt_width, 4, 1, plt_file);
+    fread(&plt_height, 4, 1, plt_file);
+
+    // Create a new image
+    newImgID = gimp_image_new(plt_width, plt_height, GIMP_GRAY);
+    if(newImgID == -1)
+    {
+        g_message("Can't allocate new image.\n");
+        fclose(plt_file);
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
+
+    // Create 10 plt layers
+    int i;
+    for (i = 0; i < NUM_PLT_LAYERS; i++)
+    {
+        newLayerID = gimp_layer_new(newImgID,
+                                    plt_layernames[i],
+                                    plt_width, plt_height,
+                                    GIMP_GRAYA_IMAGE,
+                                    100.0,
+                                    GIMP_NORMAL_MODE);
+        gimp_image_insert_layer(newImgID, newLayerID, 0, 0);
+        layerIDs[i] = newLayerID;
+    }
+
+    // Image data
+    // Expecting width*height (value, layer) tuples
+    numPx = plt_width * plt_height;
+    int v;
+    while (v < numPx)
+    {
+        fread(&px_value, sizeof(uint32_t), 1, plt_file);
+
+        fread(&px_layer, sizeof(uint32_t), 1, plt_file);
+        ++v;
+    }
+    //gimp_image_delete(newImgID);
+
+    fclose(plt_file);
+    *imageID = newImgID;
+    return(GIMP_PDB_SUCCESS);
+}
+
+
+static GimpPDBStatusType plt_save(gint32 imageID, gint32 drawableID)
+{
+    return(GIMP_PDB_SUCCESS);
 }
 
 

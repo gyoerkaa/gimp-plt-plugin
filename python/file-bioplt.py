@@ -40,8 +40,8 @@ from gimpfu import *
 
 
 # Don't change order, keep everything lowercase
-plt_layernames   = ['skin', 'hair', 'metal1', 'metal2', 'cloth1', 'cloth2', \
-                    'leather1', 'leather2', 'tattoo1', 'tattoo2']
+plt_layernames   = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
+                    "leather1", "leather2", "tattoo1", "tattoo2"]
 
 
 def plt_load(filename, raw_filename):

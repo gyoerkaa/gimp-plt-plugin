@@ -22,7 +22,7 @@ Short plt File documentation:
 
 P  L  T     V  1
 50 4C 54 20 56 31 20 20
-Random ? But this 8 byte always work
+Random ? But this 8 bytes always work
 0A 00 00 00 00 00 00 00
 width
 00 00 00 00

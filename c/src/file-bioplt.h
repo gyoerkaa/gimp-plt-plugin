@@ -5,8 +5,9 @@
 #define SAVE_PROCEDURE "file-bioplt-save"
 
 
-// Don't change order, keep everything lowercase
 #define NUM_PLT_LAYERS 10
+
+// Don't change order, keep everything lowercase
 const gchar *plt_layernames[NUM_PLT_LAYERS]  = {
     "skin",
     "hair",
@@ -19,9 +20,7 @@ const gchar *plt_layernames[NUM_PLT_LAYERS]  = {
     "tattoo1",
     "tattoo2"};
 
-
 static void query(void);
-
 
 static void run(const gchar      *name,
                 gint              nparams,
@@ -29,11 +28,8 @@ static void run(const gchar      *name,
                 gint             *nreturn_vals,
                 GimpParam       **return_vals);
 
-
 static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID);
 
-
 static GimpPDBStatusType plt_save(gint32 imageID, gint32 drawableID);
-
 
 #endif

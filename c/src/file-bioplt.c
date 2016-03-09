@@ -140,14 +140,15 @@ static void run(const gchar      *name,
 static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
 {
     FILE *plt_file = 0;
+    int i;
 
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
 
     uint32_t numPx = 0;
-    uint32_t px_value = 0;
-    uint32_t px_layer = 0;
+    uint8_t px_value = 0;
+    uint8_t px_layer = 0;
 
     gint32 newImgID   = -1;
     gint32 newLayerID = -1;
@@ -176,7 +177,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     }
 
     // Create 10 plt layers
-    int i;
+
     for (i = 0; i < NUM_PLT_LAYERS; i++)
     {
         newLayerID = gimp_layer_new(newImgID,
@@ -192,13 +193,20 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     // Image data
     // Expecting width*height (value, layer) tuples
     numPx = plt_width * plt_height;
-    int v;
-    while (v < numPx)
+    i = 0;
+    while (i < numPx)
     {
-        fread(&px_value, sizeof(uint32_t), 1, plt_file);
+        fread(&px_value, 1, 1, plt_file);
 
-        fread(&px_layer, sizeof(uint32_t), 1, plt_file);
-        ++v;
+        fread(&px_layer, 1, 1, plt_file);
+        /*
+        gimp_drawable_set_pixel(layerIDs[px_layer],
+                                i % plt_width,
+                                plt_height - (int)(floor(i / plt_width)) - 1,
+                                2,
+                                (guint8 *) px_value);*/
+
+        ++i;
     }
     //gimp_image_delete(newImgID);
 

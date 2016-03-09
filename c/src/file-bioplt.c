@@ -212,26 +212,6 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     fclose(plt_file);
     *imageID = newImgID;
     return(GIMP_PDB_SUCCESS);
-    /*
-    plt_file = fopen(filename, "rb");
-
-    gint32 newImgID    = gimp_image_new(8, 8, GIMP_GRAY);
-    gint32 newLayerID  = gimp_layer_new(newImgID,
-                                        "test",
-                                        8, 8,
-                                        GIMP_GRAYA_IMAGE,
-                                        100.0,
-                                        GIMP_NORMAL_MODE);
-    gimp_image_insert_layer(newImgID, newLayerID, 0, 0);
-
-    guint8 pixel[2] = {0, 255};
-    gimp_drawable_set_pixel(newLayerID,
-                            1,
-                            1,
-                            2,
-                            pixel);
-    fclose(plt_file);
-    return(GIMP_PDB_SUCCESS);*/
 }
 
 

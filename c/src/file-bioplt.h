@@ -1,9 +1,10 @@
 #ifndef FILE_BIOPLT_H
 #define FILE_BIOPLT_H
 
+#include <libgimp/gimp.h>
+
 #define LOAD_PROCEDURE "file-bioplt-load"
 #define SAVE_PROCEDURE "file-bioplt-save"
-
 
 #define NUM_PLT_LAYERS 10
 

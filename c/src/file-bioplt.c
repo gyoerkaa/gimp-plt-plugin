@@ -1,11 +1,9 @@
-#include <libgimp/gimp.h>
+#include "file-bioplt.h"
 
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-
-#include "file-bioplt.h"
-
+#include <math.h>
 
 static void query(void)
 {
@@ -153,6 +151,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     gint32 newImgID   = -1;
     gint32 newLayerID = -1;
     gint32 layerIDs[NUM_PLT_LAYERS];
+    guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
     plt_file = fopen(filename, "rb");
     if(plt_file == 0)
@@ -197,22 +196,42 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     while (i < numPx)
     {
         fread(&px_value, 1, 1, plt_file);
-
         fread(&px_layer, 1, 1, plt_file);
-        /*
+
+        pixel[0] = px_value;
         gimp_drawable_set_pixel(layerIDs[px_layer],
                                 i % plt_width,
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
-                                (guint8 *) px_value);*/
+                                pixel);
 
-        ++i;
+        i++;
     }
     //gimp_image_delete(newImgID);
 
     fclose(plt_file);
     *imageID = newImgID;
     return(GIMP_PDB_SUCCESS);
+    /*
+    plt_file = fopen(filename, "rb");
+
+    gint32 newImgID    = gimp_image_new(8, 8, GIMP_GRAY);
+    gint32 newLayerID  = gimp_layer_new(newImgID,
+                                        "test",
+                                        8, 8,
+                                        GIMP_GRAYA_IMAGE,
+                                        100.0,
+                                        GIMP_NORMAL_MODE);
+    gimp_image_insert_layer(newImgID, newLayerID, 0, 0);
+
+    guint8 pixel[2] = {0, 255};
+    gimp_drawable_set_pixel(newLayerID,
+                            1,
+                            1,
+                            2,
+                            pixel);
+    fclose(plt_file);
+    return(GIMP_PDB_SUCCESS);*/
 }
 
 

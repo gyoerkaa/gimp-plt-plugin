@@ -123,7 +123,7 @@ static void run(const gchar      *name,
             case GIMP_RUN_WITH_LAST_VALS:
             case GIMP_RUN_NONINTERACTIVE:
             default:
-                status = plt_save(imageID, drawableID);
+                status = plt_save(param[1].data.d_string, imageID);
                 break;
         }
 
@@ -138,19 +138,22 @@ static void run(const gchar      *name,
 static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
 {
     FILE *plt_file = 0;
-    int i;
+    unsigned int i;
 
+    // Using uint for guaranteed sizes across all systems.
+    // guint may do the trick too, but GTK's documentation for guint
+    // is ambiguous.
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
 
-    uint32_t numPx = 0;
     uint8_t px_value = 0;
     uint8_t px_layer = 0;
 
+    guint32 numPx = 0;
     gint32 newImgID   = -1;
     gint32 newLayerID = -1;
-    gint32 layerIDs[NUM_PLT_LAYERS];
+    gint32 layerIDs[PLT_NUM_LAYERS];
     guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
     plt_file = fopen(filename, "rb");
@@ -160,24 +163,47 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
         return(GIMP_PDB_EXECUTION_ERROR);
     }
 
-    // Header
-    fread(&plt_version, 1, 8, plt_file);
-    fseek(plt_file, 8, SEEK_CUR); // These 8 bytes don't matter
-    fread(&plt_width, 4, 1, plt_file);
-    fread(&plt_height, 4, 1, plt_file);
+    // Read header: Version, should be 8x1 bytes = "PLT V1  "
+    if (fread(plt_version, 1, 8, plt_file) < 8)
+    {
+        g_message("Invalid plt file: Unable to read version information.\n");
+        fclose(plt_file);
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
+    if (!strcmp(plt_version, PLT_HEADER_VERSION))
+    {
+        g_message("Invalid plt file: Invalid PLT version.\n");
+        fclose(plt_file);
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
+    // Read header: Next 8 bytes don't matter
+    fseek(plt_file, 8, SEEK_CUR);
+    // Read header: Width
+    if (fread(&plt_width, 4, 1, plt_file) < 4)
+    {
+        g_message("Invalid plt file: Unable to read width.\n");
+        fclose(plt_file);
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
+    // Read header: Height
+    if (fread(&plt_height, 4, 1, plt_file) < 4)
+    {
+        g_message("Invalid plt file: Unable to read height.\n");
+        fclose(plt_file);
+        return(GIMP_PDB_EXECUTION_ERROR);
+    }
 
     // Create a new image
     newImgID = gimp_image_new(plt_width, plt_height, GIMP_GRAY);
     if(newImgID == -1)
     {
-        g_message("Can't allocate new image.\n");
+        g_message("Unable to allocate new image.\n");
         fclose(plt_file);
         return(GIMP_PDB_EXECUTION_ERROR);
     }
 
-    // Create 10 plt layers
-
-    for (i = 0; i < NUM_PLT_LAYERS; i++)
+    // Create the 10 plt layers, add them to the new image and save their ID's
+    for (i = 0; i < PLT_NUM_LAYERS; i++)
     {
         newLayerID = gimp_layer_new(newImgID,
                                     plt_layernames[i],
@@ -189,35 +215,44 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
         layerIDs[i] = newLayerID;
     }
 
-    // Image data
+    // Read image data
     // Expecting width*height (value, layer) tuples
-    numPx = plt_width * plt_height;
-    i = 0;
-    while (i < numPx)
+    //TODO: In case of errors do gimp_image_delete(newImgID)
+    numPx = (guint32)(plt_width * plt_height);
+    for (i = 0; i < numPx; i++)
     {
         fread(&px_value, 1, 1, plt_file);
         fread(&px_layer, 1, 1, plt_file);
-
         pixel[0] = px_value;
         gimp_drawable_set_pixel(layerIDs[px_layer],
                                 i % plt_width,
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
                                 pixel);
-
-        i++;
     }
-    //gimp_image_delete(newImgID);
 
     fclose(plt_file);
     *imageID = newImgID;
-    return(GIMP_PDB_SUCCESS);
+    return (GIMP_PDB_SUCCESS);
 }
 
 
-static GimpPDBStatusType plt_save(gint32 imageID, gint32 drawableID)
+static GimpPDBStatusType plt_save(gchar *filename, gint32 imageID)
 {
-    return(GIMP_PDB_SUCCESS);
+    FILE *plt_file = 0;
+    unsigned int i;
+
+    plt_file = fopen(filename, "wb");
+    if(plt_file == 0)
+    {
+        g_message("Error opening %s", filename);
+        return (GIMP_PDB_EXECUTION_ERROR);
+    }
+
+    // TODO: Write Data to plt file
+
+    fclose(plt_file);
+    return (GIMP_PDB_SUCCESS);
 }
 
 

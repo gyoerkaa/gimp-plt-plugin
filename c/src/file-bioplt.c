@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 
 static void query(void)
@@ -35,7 +36,7 @@ static void query(void)
     gimp_install_procedure(LOAD_PROCEDURE,
                            "Load a Packed Layer Texture (.plt)",
                            "Load a Packed Layer Texture (.plt)",
-                           "Attila Györkös",
+                           "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
                            "Packed Layer Texture",
@@ -53,7 +54,7 @@ static void query(void)
     gimp_install_procedure(SAVE_PROCEDURE,
                            "Save a Packed Layer Texture (.plt)",
                            "Save a Packed Layer Texture (.plt)",
-                           "Attila Györkös",
+                           "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
                            "Packed Layer Texture",
@@ -76,14 +77,14 @@ static void run(const gchar      *name,
                 GimpParam       **return_vals)
 {
     static GimpParam return_values[2];
-    GimpPDBStatusType status = GIMP_PDB_SUCCESS;
+    GimpPDBStatusType status = GIMP_PDB_EXECUTION_ERROR;
     GimpRunMode run_mode;
 
     /* Mandatory output values */
-    *nreturn_vals = 1;
+    *nreturn_vals = 2;
     *return_vals  = return_values;
 
-    /* Default return value = success*/
+    /* Default return value */
     return_values[0].type = GIMP_PDB_STATUS;
     return_values[0].data.d_status = status;
 
@@ -91,9 +92,12 @@ static void run(const gchar      *name,
     gint32 drawableID;
 
     /* Get run_mode - don't display a dialog if in NONINTERACTIVE mode */
-    run_mode = (GimpRunMode)param[0].data.d_int32;
+    run_mode = (GimpRunMode) param[0].data.d_int32;
     if (!strcmp(name, LOAD_PROCEDURE))
     {
+        imageID    = -1;
+        drawableID = -1;
+
         // No import options/interactivity right now, so every run mode is
         // handled the same way
         switch (run_mode)
@@ -106,8 +110,11 @@ static void run(const gchar      *name,
                 break;
         }
 
-        if(status == GIMP_PDB_SUCCESS)
+        return_values[0].data.d_status = status;
+        if (status == GIMP_PDB_SUCCESS)
         {
+            return_values[1].type = GIMP_PDB_IMAGE;
+            return_values[1].data.d_image = imageID;
         }
     }
     else if (!strcmp(name, SAVE_PROCEDURE))
@@ -132,12 +139,13 @@ static void run(const gchar      *name,
     {
         return_values[0].data.d_status = GIMP_PDB_CALLING_ERROR;
     }
+
 }
 
 
 static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
 {
-    FILE *plt_file = 0;
+    FILE *stream = 0;
     unsigned int i;
 
     // Using uint for guaranteed sizes across all systems.
@@ -146,6 +154,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
+    uint8_t * plt_data;
 
     uint8_t px_value = 0;
     uint8_t px_layer = 0;
@@ -156,41 +165,41 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     gint32 layerIDs[PLT_NUM_LAYERS];
     guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
-    plt_file = fopen(filename, "rb");
-    if(plt_file == 0)
+    stream = fopen(filename, "rb");
+    if(stream == 0)
     {
         g_message("Error opening file.\n");
-        return(GIMP_PDB_EXECUTION_ERROR);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
 
     // Read header: Version, should be 8x1 bytes = "PLT V1  "
-    if (fread(plt_version, 1, 8, plt_file) < 8)
+    if (fread(plt_version, 1, 8, stream) < 8)
     {
         g_message("Invalid plt file: Unable to read version information.\n");
-        fclose(plt_file);
-        return(GIMP_PDB_EXECUTION_ERROR);
+        fclose(stream);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
-    if (!strcmp(plt_version, PLT_HEADER_VERSION))
+    if (strcmp(plt_version, PLT_HEADER_VERSION) != 0)
     {
         g_message("Invalid plt file: Invalid PLT version.\n");
-        fclose(plt_file);
-        return(GIMP_PDB_EXECUTION_ERROR);
+        fclose(stream);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
     // Read header: Next 8 bytes don't matter
-    fseek(plt_file, 8, SEEK_CUR);
+    fseek(stream, 8, SEEK_CUR);
     // Read header: Width
-    if (fread(&plt_width, 4, 1, plt_file) < 4)
+    if (fread(&plt_width, 4, 1, stream) < 1)
     {
         g_message("Invalid plt file: Unable to read width.\n");
-        fclose(plt_file);
-        return(GIMP_PDB_EXECUTION_ERROR);
+        fclose(stream);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
     // Read header: Height
-    if (fread(&plt_height, 4, 1, plt_file) < 4)
+    if (fread(&plt_height, 4, 1, stream) < 1)
     {
         g_message("Invalid plt file: Unable to read height.\n");
-        fclose(plt_file);
-        return(GIMP_PDB_EXECUTION_ERROR);
+        fclose(stream);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
 
     // Create a new image
@@ -198,9 +207,10 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     if(newImgID == -1)
     {
         g_message("Unable to allocate new image.\n");
-        fclose(plt_file);
-        return(GIMP_PDB_EXECUTION_ERROR);
+        fclose(stream);
+        return (GIMP_PDB_EXECUTION_ERROR);
     }
+    gimp_image_set_filename(newImgID, filename);
 
     // Create the 10 plt layers, add them to the new image and save their ID's
     for (i = 0; i < PLT_NUM_LAYERS; i++)
@@ -216,22 +226,46 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     }
 
     // Read image data
-    // Expecting width*height (value, layer) tuples
-    //TODO: In case of errors do gimp_image_delete(newImgID)
-    numPx = (guint32)(plt_width * plt_height);
+    // Expecting width*height (value, layer) tuples = 2*width*height bytes
+    numPx = plt_width * plt_height;
+    plt_data = (uint8_t*) malloc(sizeof(uint8_t)*2*numPx);
+    if (fread(plt_data, 1, 2*numPx, stream) < numPx)
+    {
+        g_message("Image size mismatch.\n");
+        fclose(stream);
+        gimp_image_delete(newImgID);
+        return (GIMP_PDB_EXECUTION_ERROR);
+    }
     for (i = 0; i < numPx; i++)
     {
-        fread(&px_value, 1, 1, plt_file);
-        fread(&px_layer, 1, 1, plt_file);
-        pixel[0] = px_value;
+        pixel[0] = plt_data[2*i];
+        px_layer = plt_data[2*i+1];
         gimp_drawable_set_pixel(layerIDs[px_layer],
                                 i % plt_width,
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
                                 pixel);
     }
+    g_free(plt_data);
+    /*
+    numPx = (guint32)(plt_width * plt_height);
+    for (i = 0; i < numPx; i++)
+    {
+        fread(&px_value, 1, 1, stream);
+        fread(&px_layer, 1, 1, stream);
+        pixel[0] = px_value;
+        //printf("( %d , %d ) = ( %d , %d )\n", px_value, px_layer, px_value, layerIDs[px_layer]);
+        gimp_drawable_set_pixel(layerIDs[px_layer],
+                                i % plt_width,
+                                plt_height - (int)(floor(i / plt_width)) - 1,
+                                2,
+                                pixel);
+    }
+    */
+    gimp_image_set_active_layer(newImgID, layerIDs[0]);
+    gimp_displays_flush();
 
-    fclose(plt_file);
+    fclose(stream);
     *imageID = newImgID;
     return (GIMP_PDB_SUCCESS);
 }
@@ -239,11 +273,11 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
 
 static GimpPDBStatusType plt_save(gchar *filename, gint32 imageID)
 {
-    FILE *plt_file = 0;
+    FILE *stream = 0;
     unsigned int i;
 
-    plt_file = fopen(filename, "wb");
-    if(plt_file == 0)
+    stream = fopen(filename, "wb");
+    if(stream == 0)
     {
         g_message("Error opening %s", filename);
         return (GIMP_PDB_EXECUTION_ERROR);
@@ -251,8 +285,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 imageID)
 
     // TODO: Write Data to plt file
 
-    fclose(plt_file);
-    return (GIMP_PDB_SUCCESS);
+    fclose(stream);
+    return (GIMP_PDB_EXECUTION_ERROR);
+    //return (GIMP_PDB_SUCCESS);
 }
 
 

@@ -30,8 +30,8 @@ static void run(const gchar      *name,
                 gint             *nreturn_vals,
                 GimpParam       **return_vals);
 
-static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID);
+static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id);
 
-static GimpPDBStatusType plt_save(gchar *filename, gint32 imageID);
+static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id);
 
 #endif

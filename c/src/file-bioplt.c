@@ -88,14 +88,14 @@ static void run(const gchar      *name,
     return_values[0].type = GIMP_PDB_STATUS;
     return_values[0].data.d_status = status;
 
-    gint32 imageID;
+    gint32 image_id;
     gint32 drawableID;
 
     /* Get run_mode - don't display a dialog if in NONINTERACTIVE mode */
     run_mode = (GimpRunMode) param[0].data.d_int32;
-    if (!strcmp(name, LOAD_PROCEDURE))
+    if (!g_strcmp0(name, LOAD_PROCEDURE))
     {
-        imageID    = -1;
+        image_id    = -1;
         drawableID = -1;
 
         // No import options/interactivity right now, so every run mode is
@@ -106,7 +106,7 @@ static void run(const gchar      *name,
             case GIMP_RUN_WITH_LAST_VALS:
             case GIMP_RUN_NONINTERACTIVE:
             default:
-                status = plt_load(param[1].data.d_string, &imageID);
+                status = plt_load(param[1].data.d_string, &image_id);
                 break;
         }
 
@@ -114,12 +114,12 @@ static void run(const gchar      *name,
         if (status == GIMP_PDB_SUCCESS)
         {
             return_values[1].type = GIMP_PDB_IMAGE;
-            return_values[1].data.d_image = imageID;
+            return_values[1].data.d_image = image_id;
         }
     }
-    else if (!strcmp(name, SAVE_PROCEDURE))
+    else if (!g_strcmp0(name, SAVE_PROCEDURE))
     {
-        imageID    = param[1].data.d_int32;
+        image_id    = param[1].data.d_int32;
         drawableID = param[2].data.d_int32;
 
         // No import options/interactivity right now, so every run mode is
@@ -130,10 +130,11 @@ static void run(const gchar      *name,
             case GIMP_RUN_WITH_LAST_VALS:
             case GIMP_RUN_NONINTERACTIVE:
             default:
-                status = plt_save(param[1].data.d_string, imageID);
+                status = plt_save(param[3].data.d_string, image_id);
                 break;
         }
 
+        return_values[0].data.d_status = status;
     }
     else
     {
@@ -143,7 +144,7 @@ static void run(const gchar      *name,
 }
 
 
-static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
+static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 {
     FILE *stream = 0;
     unsigned int i;
@@ -154,15 +155,15 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
-    uint8_t * plt_data;
+    uint8_t *buffer;
 
     uint8_t px_value = 0;
     uint8_t px_layer = 0;
 
-    guint32 numPx = 0;
+    guint32 num_px = 0;
     gint32 newImgID   = -1;
     gint32 newLayerID = -1;
-    gint32 layerIDs[PLT_NUM_LAYERS];
+    gint32 plt_layer_ids[PLT_NUM_LAYERS];
     guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
     stream = fopen(filename, "rb");
@@ -181,7 +182,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
     }
     if (strcmp(plt_version, PLT_HEADER_VERSION) != 0)
     {
-        g_message("Invalid plt file: Invalid PLT version.\n");
+        g_message("Invalid plt file: Version mismatch.\n");
         fclose(stream);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
@@ -222,72 +223,179 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *imageID)
                                     100.0,
                                     GIMP_NORMAL_MODE);
         gimp_image_insert_layer(newImgID, newLayerID, 0, 0);
-        layerIDs[i] = newLayerID;
+        plt_layer_ids[i] = newLayerID;
     }
 
     // Read image data
     // Expecting width*height (value, layer) tuples = 2*width*height bytes
-    numPx = plt_width * plt_height;
-    plt_data = (uint8_t*) malloc(sizeof(uint8_t)*2*numPx);
-    if (fread(plt_data, 1, 2*numPx, stream) < numPx)
+    num_px = plt_width * plt_height;
+    buffer = (uint8_t*) malloc(sizeof(uint8_t)*2*num_px);
+    if (fread(buffer, 1, 2*num_px, stream) < (2*num_px))
     {
         g_message("Image size mismatch.\n");
         fclose(stream);
         gimp_image_delete(newImgID);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
-    for (i = 0; i < numPx; i++)
+    for (i = 0; i < num_px; i++)
     {
-        pixel[0] = plt_data[2*i];
-        px_layer = plt_data[2*i+1];
-        gimp_drawable_set_pixel(layerIDs[px_layer],
+        pixel[0] = buffer[2*i];
+        //pixel[1] = (pixel[0] > 0) * 255;
+        px_layer = buffer[2*i+1];
+        gimp_drawable_set_pixel(plt_layer_ids[px_layer],
                                 i % plt_width,
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
                                 pixel);
     }
-    g_free(plt_data);
+    g_free(buffer);
     /*
-    numPx = (guint32)(plt_width * plt_height);
-    for (i = 0; i < numPx; i++)
+    num_px = (guint32)(plt_width * plt_height);
+    for (i = 0; i < num_px; i++)
     {
         fread(&px_value, 1, 1, stream);
         fread(&px_layer, 1, 1, stream);
         pixel[0] = px_value;
-        //printf("( %d , %d ) = ( %d , %d )\n", px_value, px_layer, px_value, layerIDs[px_layer]);
-        gimp_drawable_set_pixel(layerIDs[px_layer],
+        //printf("( %d , %d ) = ( %d , %d )\n", px_value, px_layer, px_value, plt_layer_ids[px_layer]);
+        gimp_drawable_set_pixel(plt_layer_ids[px_layer],
                                 i % plt_width,
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
                                 pixel);
     }
     */
-    gimp_image_set_active_layer(newImgID, layerIDs[0]);
+    gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
     gimp_displays_flush();
 
     fclose(stream);
-    *imageID = newImgID;
+    *image_id = newImgID;
     return (GIMP_PDB_SUCCESS);
 }
 
 
-static GimpPDBStatusType plt_save(gchar *filename, gint32 imageID)
+static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 {
     FILE *stream = 0;
-    unsigned int i;
+    unsigned int i, j;
+
+    uint8_t  plt_version[8] = PLT_HEADER_VERSION;
+    uint8_t  plt_info[8]    = {10, 0, 0, 0, 0, 0, 0, 0};
+    uint32_t plt_width  = 0;
+    uint32_t plt_height = 0;
+
+    uint8_t *buffer;
+    uint32_t num_px = 0;
+
+    GimpImageBaseType img_basetype;
+
+    // Only get image data if it's valid
+    if (!gimp_image_is_valid(image_id))
+    {
+        g_message("Invalid image.\n");
+        return (GIMP_PDB_EXECUTION_ERROR);
+    }
+    plt_width  = gimp_image_width(image_id);
+    plt_height = gimp_image_height(image_id);
+    img_basetype = gimp_image_base_type(image_id);
+
+    /*
+    gint img_num_layers; // num layers in image
+    gint *img_layer_ids; // all layers in image
+    gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // The 10 plt layers
+    gint32 detected_plt_layers = 0;
+
+    // Check for the presence of the 10 plt layers by checking layer names
+    img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    for (i = 0; i < PLT_NUM_LAYERS; i++)
+    {
+        for (j = 0; j < img_num_layers; j++)
+        {
+            if (!g_ascii_strcasecmp(gimp_item_get_name(img_layer_ids[j]), plt_layernames[i]))
+            {
+                plt_layer_ids[i] = img_layer_ids[j];
+                detected_plt_layers++;
+                break;
+            }
+        }
+    }
+    // If we can't find all 10 layers, take the 10 topmost layers.
+    // (We do this to get some compatiblity to the old plugin.)
+    if (detected_plt_layers < PLT_NUM_LAYERS)
+    {
+        if (img_num_layers < PLT_NUM_LAYERS)
+        {
+            g_message("Requires an image with 10 layers or more.\n");
+            return (GIMP_PDB_EXECUTION_ERROR);
+        }
+        for (i = 0; i < PLT_NUM_LAYERS; i++)
+        {
+            plt_layer_ids[i] = img_layer_ids[i];
+        }
+    }
+    */
+
+    // Write image data to buffer
+    gint x, y;
+    gint32 layer_id;
+    guint8 *pixel;
+    gint num_channels;
+    num_px = plt_width * plt_height;
+
+    buffer = (uint8_t*) malloc(sizeof(uint8_t)*2*num_px);
+    switch(img_basetype)
+    {
+        case GIMP_GRAY:
+        {
+            for (i = 0; i < num_px; i++)
+            {
+                x = (gint)(i % plt_width);
+                y = plt_height - (gint)(floor(i / plt_width)) - 1;
+                layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
+                if (layer_id >= 0)
+                {
+                    pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
+                    buffer[2*i]   = pixel[0];
+                    buffer[2*i+1] = 0;
+                }
+                else
+                {
+                    buffer[2*i]   = 255;
+                    buffer[2*i+1] = 0;
+                }
+            }
+            break;
+        }
+        case GIMP_RGB:
+        {
+            break;
+        }
+        case GIMP_INDEXED:
+        default:
+        {
+            g_message("Image type has to be Grayscale or RGB.\n");
+            return (GIMP_PDB_EXECUTION_ERROR);
+        }
+    }
 
     stream = fopen(filename, "wb");
-    if(stream == 0)
+    if (stream == 0)
     {
-        g_message("Error opening %s", filename);
+        g_message("Error opening %s\n", filename);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
-    // TODO: Write Data to plt file
+    // Write header
+    fwrite(plt_version, 1, 8, stream);
+    fwrite(plt_info, 1, 8, stream);
+    fwrite(&plt_width, 4, 1, stream);
+    fwrite(&plt_height, 4, 1, stream);
+
+    // Write buffer to file
+    fwrite(buffer, 1, 2*num_px, stream);
+    g_free(buffer);
 
     fclose(stream);
-    return (GIMP_PDB_EXECUTION_ERROR);
-    //return (GIMP_PDB_SUCCESS);
+    return (GIMP_PDB_SUCCESS);
 }
 
 

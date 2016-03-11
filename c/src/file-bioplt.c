@@ -159,8 +159,8 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 
     uint8_t px_value = 0;
     uint8_t px_layer = 0;
+    uint32_t num_px = 0;
 
-    guint32 num_px = 0;
     gint32 newImgID   = -1;
     gint32 newLayerID = -1;
     gint32 plt_layer_ids[PLT_NUM_LAYERS];
@@ -249,21 +249,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
                                 pixel);
     }
     g_free(buffer);
-    /*
-    num_px = (guint32)(plt_width * plt_height);
-    for (i = 0; i < num_px; i++)
-    {
-        fread(&px_value, 1, 1, stream);
-        fread(&px_layer, 1, 1, stream);
-        pixel[0] = px_value;
-        //printf("( %d , %d ) = ( %d , %d )\n", px_value, px_layer, px_value, plt_layer_ids[px_layer]);
-        gimp_drawable_set_pixel(plt_layer_ids[px_layer],
-                                i % plt_width,
-                                plt_height - (int)(floor(i / plt_width)) - 1,
-                                2,
-                                pixel);
-    }
-    */
+
     gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
     gimp_displays_flush();
 
@@ -284,6 +270,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     uint32_t plt_height = 0;
 
     uint8_t *buffer;
+    uint8_t *pixel;
     uint32_t num_px = 0;
 
     GimpImageBaseType img_basetype;
@@ -337,10 +324,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     // Write image data to buffer
     gint x, y;
     gint32 layer_id;
-    guint8 *pixel;
     gint num_channels;
-    num_px = plt_width * plt_height;
 
+    num_px = plt_width * plt_height;
     buffer = (uint8_t*) malloc(sizeof(uint8_t)*2*num_px);
     switch(img_basetype)
     {

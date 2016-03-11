@@ -229,7 +229,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     // Read image data
     // Expecting width*height (value, layer) tuples = 2*width*height bytes
     num_px = plt_width * plt_height;
-    buffer = (uint8_t*) malloc(sizeof(uint8_t)*2*num_px);
+    buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
     if (fread(buffer, 1, 2*num_px, stream) < (2*num_px))
     {
         g_message("Image size mismatch.\n");
@@ -327,11 +327,14 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gint num_channels;
 
     num_px = plt_width * plt_height;
-    buffer = (uint8_t*) malloc(sizeof(uint8_t)*2*num_px);
+    buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
     switch(img_basetype)
     {
         case GIMP_GRAY:
         {
+            // Gray Image
+            // >= 1 channels: value (+ alpha). We ignore alpha though, so it
+            // doesn't matter wether its present or not.
             for (i = 0; i < num_px; i++)
             {
                 x = (gint)(i % plt_width);
@@ -341,7 +344,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 {
                     pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
                     buffer[2*i]   = pixel[0];
-                    buffer[2*i+1] = 0;
+                    buffer[2*i+1] = 0; // TODO: find proper layer
                 }
                 else
                 {
@@ -353,6 +356,27 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         }
         case GIMP_RGB:
         {
+            // RGB Image
+            // >= 3 channels: r +g + b (+ alpha). We ignore alpha though, so it
+            // doesn't matter wether its present or not.
+            // We'll calculate gray value with (r+g+b)/3.
+            for (i = 0; i < num_px; i++)
+            {
+                x = (gint)(i % plt_width);
+                y = plt_height - (gint)(floor(i / plt_width)) - 1;
+                layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
+                if (layer_id >= 0)
+                {
+                    pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
+                    buffer[2*i]   = (pixel[0]+pixel[1]+pixel[2])/3;
+                    buffer[2*i+1] = 0; // TODO: find proper layer
+                }
+                else
+                {
+                    buffer[2*i]   = 255;
+                    buffer[2*i+1] = 0;
+                }
+            }
             break;
         }
         case GIMP_INDEXED:

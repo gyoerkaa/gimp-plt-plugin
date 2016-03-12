@@ -89,14 +89,14 @@ static void run(const gchar      *name,
     return_values[0].data.d_status = status;
 
     gint32 image_id;
-    gint32 drawableID;
+    gint32 drawable_id;
 
     /* Get run_mode - don't display a dialog if in NONINTERACTIVE mode */
     run_mode = (GimpRunMode) param[0].data.d_int32;
     if (!g_strcmp0(name, LOAD_PROCEDURE))
     {
         image_id    = -1;
-        drawableID = -1;
+        drawable_id = -1;
 
         // No import options/interactivity right now, so every run mode is
         // handled the same way
@@ -120,7 +120,7 @@ static void run(const gchar      *name,
     else if (!g_strcmp0(name, SAVE_PROCEDURE))
     {
         image_id    = param[1].data.d_int32;
-        drawableID = param[2].data.d_int32;
+        drawable_id = param[2].data.d_int32;
 
         // No import options/interactivity right now, so every run mode is
         // handled the same way
@@ -379,7 +379,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
             }
             break;
         }
-        case GIMP_INDEXED:
+        case GIMP_INDEXED: // You're out of luck buddy
         default:
         {
             g_message("Image type has to be Grayscale or RGB.\n");

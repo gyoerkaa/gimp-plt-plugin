@@ -402,7 +402,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 
     // Write buffer to file
     fwrite(buffer, 1, 2*num_px, stream);
+
     g_free(buffer);
+    //g_free(img_layer_ids);
 
     fclose(stream);
     return (GIMP_PDB_SUCCESS);

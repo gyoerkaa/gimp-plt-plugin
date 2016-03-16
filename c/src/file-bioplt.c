@@ -173,6 +173,9 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
+    gimp_progress_init_printf ("Opening %s", filename);
+    gimp_progress_update(0.0);
+
     // Read header: Version, should be 8x1 bytes = "PLT V1  "
     if (fread(plt_version, 1, 8, stream) < 8)
     {
@@ -212,6 +215,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
     gimp_image_set_filename(newImgID, filename);
+    gimp_progress_update(0.1);
 
     // Create the 10 plt layers, add them to the new image and save their ID's
     for (i = 0; i < PLT_NUM_LAYERS; i++)
@@ -247,13 +251,18 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
                                 plt_height - (int)(floor(i / plt_width)) - 1,
                                 2,
                                 pixel);
+        gimp_progress_update((float) i/ (float) num_px);
     }
+    gimp_progress_update(1.0);
     g_free(buffer);
 
     gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
     gimp_displays_flush();
 
     fclose(stream);
+
+    gimp_progress_update(1.0);
+
     *image_id = newImgID;
     return (GIMP_PDB_SUCCESS);
 }
@@ -274,6 +283,14 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     uint32_t num_px = 0;
 
     GimpImageBaseType img_basetype;
+    gint img_num_layers; // num layers in image
+    gint *img_layer_ids; // all layers in image
+    gint32 layer_id;
+    gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // 10 (detected) plt layers
+    gint32 detected_plt_layers = 0;
+    gint x, y;
+
+    gint num_channels; // Channels in image
 
     // Only get image data if it's valid
     if (!gimp_image_is_valid(image_id))
@@ -285,11 +302,8 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     plt_height = gimp_image_height(image_id);
     img_basetype = gimp_image_base_type(image_id);
 
-    /*
-    gint img_num_layers; // num layers in image
-    gint *img_layer_ids; // all layers in image
-    gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // The 10 plt layers
-    gint32 detected_plt_layers = 0;
+    gimp_progress_init_printf ("Exporting %s", filename);
+    gimp_progress_update(0.0);
 
     // Check for the presence of the 10 plt layers by checking layer names
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
@@ -311,7 +325,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     {
         if (img_num_layers < PLT_NUM_LAYERS)
         {
-            g_message("Requires an image with 10 layers or more.\n");
+            g_message("Requires an image with at least 10 layers.\n");
             return (GIMP_PDB_EXECUTION_ERROR);
         }
         for (i = 0; i < PLT_NUM_LAYERS; i++)
@@ -319,12 +333,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
             plt_layer_ids[i] = img_layer_ids[i];
         }
     }
-    */
 
     // Write image data to buffer
-    gint x, y;
-    gint32 layer_id;
-    gint num_channels;
+
 
     num_px = plt_width * plt_height;
     buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
@@ -344,13 +355,24 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 {
                     pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
                     buffer[2*i]   = pixel[0];
-                    buffer[2*i+1] = 0; // TODO: find proper layer
+                    buffer[2*i+1] = 0;
+                    // Find layer
+                    // (only 10 possibilities, no need to be fancy)
+                    for (j = 0; j < PLT_NUM_LAYERS; j++)
+                    {
+                        if (layer_id == plt_layer_ids[j])
+                        {
+                            buffer[2*i+1] = j;
+                            break;
+                        }
+                    }
                 }
                 else
                 {
                     buffer[2*i]   = 255;
                     buffer[2*i+1] = 0;
                 }
+                gimp_progress_update((float) i/ (float) num_px);
             }
             break;
         }
@@ -369,13 +391,24 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 {
                     pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
                     buffer[2*i]   = (pixel[0]+pixel[1]+pixel[2])/3;
-                    buffer[2*i+1] = 0; // TODO: find proper layer
+                    buffer[2*i+1] = 0;
+                    // Find layer
+                    // (only 10 possibilities, no need to be fancy)
+                    for (j = 0; j < PLT_NUM_LAYERS; j++)
+                    {
+                        if (layer_id == plt_layer_ids[j])
+                        {
+                            buffer[2*i+1] = j;
+                            break;
+                        }
+                    }
                 }
                 else
                 {
                     buffer[2*i]   = 255;
                     buffer[2*i+1] = 0;
                 }
+                gimp_progress_update((float) i/ (float) num_px);
             }
             break;
         }
@@ -386,6 +419,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
             return (GIMP_PDB_EXECUTION_ERROR);
         }
     }
+    gimp_progress_update(1.0);
 
     stream = fopen(filename, "wb");
     if (stream == 0)
@@ -404,7 +438,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(buffer, 1, 2*num_px, stream);
 
     g_free(buffer);
-    //g_free(img_layer_ids);
+    g_free(img_layer_ids);
 
     fclose(stream);
     return (GIMP_PDB_SUCCESS);

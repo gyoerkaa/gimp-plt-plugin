@@ -98,12 +98,13 @@ static void run(const gchar      *name,
         image_id    = -1;
         drawable_id = -1;
 
-        // No import options/interactivity right now, so every run mode is
-        // handled the same way
         switch (run_mode)
         {
             case GIMP_RUN_INTERACTIVE:
             case GIMP_RUN_WITH_LAST_VALS:
+                status = plt_load(param[1].data.d_string, &image_id);
+                gimp_displays_flush();
+                break;
             case GIMP_RUN_NONINTERACTIVE:
             default:
                 status = plt_load(param[1].data.d_string, &image_id);
@@ -257,7 +258,6 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     g_free(buffer);
 
     gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
-    gimp_displays_flush();
 
     fclose(stream);
 

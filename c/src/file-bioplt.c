@@ -286,7 +286,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gint img_num_layers; // num layers in image
     gint *img_layer_ids; // all layers in image
     gint32 layer_id;
-    gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // 10 (detected) plt layers
+    //gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // 10 (detected) plt layers
+    gint *plt_layer_ids;
+    gint max_layer_id;
     gint32 detected_plt_layers = 0;
     gint x, y;
 
@@ -305,22 +307,36 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gimp_progress_init_printf ("Exporting %s", filename);
     gimp_progress_update(0.0);
 
-    // Check for the presence of the 10 plt layers by checking layer names
+
+    // Try searching for the 10 plt layer names
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    max_layer_id  = -1;
+    for (i = 0; i < img_num_layers; i++)
+    {
+        if (img_layer_ids[i] > max_layer_id)
+        {
+            max_layer_id = img_layer_ids[i];
+        }
+    }
+    plt_layer_ids = g_malloc(sizeof(gint)*max_layer_id);
+    for (i = 0; i < max_layer_id; i++)
+    {
+        plt_layer_ids[i] = -1;
+    }
     for (i = 0; i < PLT_NUM_LAYERS; i++)
     {
         for (j = 0; j < img_num_layers; j++)
         {
-            if (!g_ascii_strcasecmp(gimp_item_get_name(img_layer_ids[j]), plt_layernames[i]))
+            if (!g_ascii_strcasecmp(plt_layernames[i], gimp_item_get_name(img_layer_ids[j])))
             {
-                plt_layer_ids[i] = img_layer_ids[j];
+                plt_layer_ids[img_layer_ids[j]] = i;
                 detected_plt_layers++;
                 break;
             }
         }
     }
-    // If we can't find all 10 layers, take the 10 topmost layers.
-    // (We do this to get some compatiblity to the old plugin.)
+    // If we can't find the 10 layers by name. Use the 10 layers starting
+    // from the top
     if (detected_plt_layers < PLT_NUM_LAYERS)
     {
         if (img_num_layers < PLT_NUM_LAYERS)
@@ -335,8 +351,6 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     }
 
     // Write image data to buffer
-
-
     num_px = plt_width * plt_height;
     buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
     switch(img_basetype)
@@ -351,21 +365,11 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 x = (gint)(i % plt_width);
                 y = plt_height - (gint)(floor(i / plt_width)) - 1;
                 layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
-                if (layer_id >= 0)
+                if ((layer_id >= 0) && (plt_layer_ids[layer_id] >= 0))
                 {
                     pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
                     buffer[2*i]   = pixel[0];
-                    buffer[2*i+1] = 0;
-                    // Find layer
-                    // (only 10 possibilities, no need to be fancy)
-                    for (j = 0; j < PLT_NUM_LAYERS; j++)
-                    {
-                        if (layer_id == plt_layer_ids[j])
-                        {
-                            buffer[2*i+1] = j;
-                            break;
-                        }
-                    }
+                    buffer[2*i+1] = plt_layer_ids[layer_id];
                 }
                 else
                 {
@@ -390,18 +394,8 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 if (layer_id >= 0)
                 {
                     pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
-                    buffer[2*i]   = (pixel[0]+pixel[1]+pixel[2])/3;
-                    buffer[2*i+1] = 0;
-                    // Find layer
-                    // (only 10 possibilities, no need to be fancy)
-                    for (j = 0; j < PLT_NUM_LAYERS; j++)
-                    {
-                        if (layer_id == plt_layer_ids[j])
-                        {
-                            buffer[2*i+1] = j;
-                            break;
-                        }
-                    }
+                    buffer[2*i]   = pixel[0];
+                    buffer[2*i+1] = plt_layer_ids[layer_id];
                 }
                 else
                 {
@@ -439,6 +433,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 
     g_free(buffer);
     g_free(img_layer_ids);
+    g_free(plt_layer_ids);
 
     fclose(stream);
     return (GIMP_PDB_SUCCESS);

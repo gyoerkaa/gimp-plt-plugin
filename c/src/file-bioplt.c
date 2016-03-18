@@ -245,7 +245,6 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     for (i = 0; i < num_px; i++)
     {
         pixel[0] = buffer[2*i];
-        //pixel[1] = (pixel[0] > 0) * 255;
         px_layer = buffer[2*i+1];
         gimp_drawable_set_pixel(plt_layer_ids[px_layer],
                                 i % plt_width,
@@ -286,7 +285,6 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gint img_num_layers; // num layers in image
     gint *img_layer_ids; // all layers in image
     gint32 layer_id;
-    //gint32 plt_layer_ids[PLT_NUM_LAYERS] = {-1}; // 10 (detected) plt layers
     gint *plt_layer_ids;
     gint max_layer_id;
     gint32 detected_plt_layers = 0;
@@ -307,7 +305,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gimp_progress_init_printf ("Exporting %s", filename);
     gimp_progress_update(0.0);
 
-    // Try searching for the 10 plt layer names
+    // Try to find the 10 plt layers by looking for matching layer names
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
     max_layer_id  = -1;
     for (i = 0; i < img_num_layers; i++)
@@ -334,13 +332,14 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
             }
         }
     }
-    // If we can't find the 10 layers by name. Use the 10 layers starting
-    // from the top
+    // If we can't find the layers by name, use the 10 topmost layers instead
     if (detected_plt_layers < PLT_NUM_LAYERS)
     {
         if (img_num_layers < PLT_NUM_LAYERS)
         {
             g_message("Requires an image with at least 10 layers.\n");
+            g_free(img_layer_ids);
+            g_free(plt_layer_ids);
             return (GIMP_PDB_EXECUTION_ERROR);
         }
         for (i = 0; i < PLT_NUM_LAYERS; i++)
@@ -366,7 +365,10 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
                 if ((layer_id >= 0) && (plt_layer_ids[layer_id] >= 0))
                 {
-                    pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
+                    pixel = gimp_drawable_get_pixel(layer_id,
+                                                    x,
+                                                    y,
+                                                    &num_channels);
                     buffer[2*i]   = pixel[0];
                     buffer[2*i+1] = plt_layer_ids[layer_id];
                 }
@@ -392,7 +394,10 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
                 layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
                 if ((layer_id >= 0) && (plt_layer_ids[layer_id] >= 0))
                 {
-                    pixel = gimp_drawable_get_pixel(layer_id, x, y, &num_channels);
+                    pixel = gimp_drawable_get_pixel(layer_id,
+                                                    x,
+                                                    y,
+                                                    &num_channels);
                     buffer[2*i]   = pixel[0];
                     buffer[2*i+1] = plt_layer_ids[layer_id];
                 }
@@ -409,6 +414,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         default:
         {
             g_message("Image type has to be Grayscale or RGB.\n");
+            g_free(buffer);
+            g_free(img_layer_ids);
+            g_free(plt_layer_ids);
             return (GIMP_PDB_EXECUTION_ERROR);
         }
     }
@@ -418,6 +426,9 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     if (stream == 0)
     {
         g_message("Error opening %s\n", filename);
+        g_free(buffer);
+        g_free(img_layer_ids);
+        g_free(plt_layer_ids);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
@@ -430,11 +441,12 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     // Write buffer to file
     fwrite(buffer, 1, 2*num_px, stream);
 
+    fclose(stream);
+
     g_free(buffer);
     g_free(img_layer_ids);
     g_free(plt_layer_ids);
 
-    fclose(stream);
     return (GIMP_PDB_SUCCESS);
 }
 

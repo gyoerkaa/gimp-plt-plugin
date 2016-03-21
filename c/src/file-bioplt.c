@@ -216,7 +216,6 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
     gimp_image_set_filename(newImgID, filename);
-    gimp_progress_update(0.1);
 
     // Create the 10 plt layers, add them to the new image and save their ID's
     for (i = 0; i < PLT_NUM_LAYERS; i++)
@@ -254,13 +253,11 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         gimp_progress_update((float) i/ (float) num_px);
     }
     gimp_progress_update(1.0);
-    g_free(buffer);
-
     gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
 
     fclose(stream);
 
-    gimp_progress_update(1.0);
+    g_free(buffer);
 
     *image_id = newImgID;
     return (GIMP_PDB_SUCCESS);

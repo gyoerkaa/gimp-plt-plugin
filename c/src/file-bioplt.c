@@ -238,6 +238,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     {
         g_message("Image size mismatch.\n");
         fclose(stream);
+        g_free(buffer);
         gimp_image_delete(newImgID);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
@@ -435,7 +436,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(&plt_width, 4, 1, stream);
     fwrite(&plt_height, 4, 1, stream);
 
-    // Write buffer to file
+    // Write image data
     fwrite(buffer, 1, 2*num_px, stream);
 
     fclose(stream);

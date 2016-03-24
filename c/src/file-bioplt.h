@@ -5,6 +5,7 @@
 
 #define LOAD_PROCEDURE "file-bioplt-load"
 #define SAVE_PROCEDURE "file-bioplt-save"
+#define ADDL_PROCEDURE "file-bioplt-addl"
 
 #define PLT_NUM_LAYERS 10
 #define PLT_HEADER_VERSION "PLT V1  "

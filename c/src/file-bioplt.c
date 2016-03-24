@@ -22,16 +22,6 @@ static void query(void)
         {GIMP_PDB_IMAGE, (gchar*)"image", (gchar*)"Output image"}
     };
 
-    // Save arguments
-    static const GimpParamDef save_args[] =
-    {
-        {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
-        {GIMP_PDB_IMAGE,    (gchar*)"image",        (gchar*)"Input image" },
-        {GIMP_PDB_DRAWABLE, (gchar*)"drawable",     (gchar*)"Drawable to save" },
-        {GIMP_PDB_STRING,   (gchar*)"filename",     (gchar*)"The name of the file to save the image in" },
-        {GIMP_PDB_STRING,   (gchar*)"raw-filename", (gchar*)"The name entered" }
-    };
-
     // Install load procedure
     gimp_install_procedure(LOAD_PROCEDURE,
                            "Load a Packed Layer Texture (.plt)",
@@ -50,6 +40,16 @@ static void query(void)
     gimp_register_file_handler_mime(LOAD_PROCEDURE, "image/plt");
     gimp_register_load_handler(LOAD_PROCEDURE, "plt", "");
 
+    // Save arguments
+    static const GimpParamDef save_args[] =
+    {
+        {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
+        {GIMP_PDB_IMAGE,    (gchar*)"image",        (gchar*)"Input image" },
+        {GIMP_PDB_DRAWABLE, (gchar*)"drawable",     (gchar*)"Drawable to save" },
+        {GIMP_PDB_STRING,   (gchar*)"filename",     (gchar*)"The name of the file to save the image in" },
+        {GIMP_PDB_STRING,   (gchar*)"raw-filename", (gchar*)"The name entered" }
+    };
+
     // Install save procedure
     gimp_install_procedure(SAVE_PROCEDURE,
                            "Save a Packed Layer Texture (.plt)",
@@ -67,6 +67,29 @@ static void query(void)
     // Register save handlers
     gimp_register_file_handler_mime(SAVE_PROCEDURE, "image/plt");
     gimp_register_save_handler(SAVE_PROCEDURE, "plt", "");
+
+     // Add layer arguments
+    static const GimpParamDef addl_args[] =
+    {
+        {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
+        {GIMP_PDB_IMAGE,    (gchar*)"image",        (gchar*)"Input image" }
+    };
+
+    // Install "Add Layers" procedure
+    gimp_install_procedure(ADDL_PROCEDURE,
+                           "Add plt layers",
+                           "Add plt layers",
+                           "Attila Gyoerkoes",
+                           "GPL v3",
+                           "2016",
+                           "Add missing plt layers",
+                           "RGB*",
+                           GIMP_PLUGIN,
+                           G_N_ELEMENTS(addl_args),
+                           0,
+                           addl_args,
+                           NULL);
+    gimp_plugin_menu_register(ADDL_PROCEDURE, "<Image>/Tools");
 }
 
 
@@ -132,6 +155,25 @@ static void run(const gchar      *name,
             case GIMP_RUN_NONINTERACTIVE:
             default:
                 status = plt_save(param[3].data.d_string, image_id);
+                break;
+        }
+
+        return_values[0].data.d_status = status;
+    }
+    else if (!g_strcmp0(name, ADDL_PROCEDURE))
+    {
+        image_id = param[1].data.d_int32;
+
+        switch (run_mode)
+        {
+            case GIMP_RUN_INTERACTIVE:
+            case GIMP_RUN_WITH_LAST_VALS:
+                status = plt_add_layers(image_id);
+                gimp_displays_flush();
+                break;
+            case GIMP_RUN_NONINTERACTIVE:
+            default:
+                status = plt_add_layers(image_id);
                 break;
         }
 

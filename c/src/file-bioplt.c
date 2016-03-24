@@ -449,6 +449,74 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 }
 
 
+static GimpPDBStatusType plt_add_layers(gint32 image_id)
+{
+    unsigned int i, j;
+    GimpImageBaseType img_basetype;
+    gint img_num_layers;
+    gint *img_layer_ids;
+    gint img_width = 0;
+    gint img_height = 0;
+    gboolean plt_layer_detected = FALSE;
+    GimpImageType layer_type= GIMP_GRAYA_IMAGE;
+    gint32 layer_id;
+
+    // Set type of the layer depending on the type of the image
+    img_basetype = gimp_image_base_type(image_id);
+    switch(img_basetype)
+    {
+        case GIMP_GRAY:
+        {
+            layer_type = GIMP_GRAYA_IMAGE;
+            break;
+        }
+        case GIMP_RGB:
+        {
+            layer_type = GIMP_RGBA_IMAGE;
+            break;
+        }
+        case GIMP_INDEXED: // You're still out of luck
+        default:
+        {
+            g_message("Image type has to be Grayscale or RGB.\n");
+            return (GIMP_PDB_EXECUTION_ERROR);
+        }
+    }
+
+    // We don't want to create already existing plt layers
+    // Get all layers from the current image and look for missing layers
+    //TODO
+    img_width  = gimp_image_width(image_id);
+    img_height = gimp_image_height(image_id);
+    img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    for (i = 0; i < PLT_NUM_LAYERS; i++)
+    {
+        plt_layer_detected = FALSE;
+        for (j = 0; j < img_num_layers; j++)
+        {
+            if (!g_ascii_strcasecmp(plt_layernames[i], gimp_item_get_name(img_layer_ids[j])))
+            {
+                plt_layer_detected = TRUE;
+                break;
+            }
+        }
+        if (!plt_layer_detected)
+        {
+            layer_id = gimp_layer_new(image_id,
+                                      plt_layernames[i],
+                                      img_width, img_height,
+                                      layer_type,
+                                      100.0,
+                                      GIMP_NORMAL_MODE);
+            gimp_image_insert_layer(image_id, layer_id, 0, 0);
+        }
+    }
+
+    g_free(img_layer_ids);
+    return (GIMP_PDB_SUCCESS);
+}
+
+
 GimpPlugInInfo PLUG_IN_INFO = {NULL, NULL, query, run};
 
 

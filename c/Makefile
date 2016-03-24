@@ -1,6 +1,5 @@
 
 GIMPTOOL = gimptool-2.0
-#	$(GIMPTOOL) --build src/file-bioplt.c
 
 CC = gcc
 

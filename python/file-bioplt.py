@@ -171,7 +171,6 @@ def plt_create_layers(img):
         layer_type = RGBA_IMAGE
     elif img.base_type == INDEXED:
         layer_type = INDEXEDA_IMAGE
-    # We don't want to create already existing plt layers
 
     # Get all layers from the current image
     img_layernames = []
@@ -179,6 +178,7 @@ def plt_create_layers(img):
         img_layernames.append(layer.name.lower())
 
     for layername in plt_layernames:
+        # We don't want to create already existing plt layers
         if layername not in img_layernames:
             lay = gimp.Layer(img, layername, img.width, img.height, layer_type, 100, NORMAL_MODE)
             lay.fill(TRANSPARENT_FILL)

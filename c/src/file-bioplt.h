@@ -34,4 +34,6 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id);
 
 static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id);
 
+static GimpPDBStatusType plt_add_layers(gint32 image_id);
+
 #endif

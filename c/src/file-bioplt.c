@@ -8,7 +8,7 @@
 
 static void query(void)
 {
-    // Load arguments
+    // Load procedure arguments
     static const GimpParamDef load_args[] =
     {
         {GIMP_PDB_INT32,  (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive"},
@@ -16,7 +16,7 @@ static void query(void)
         {GIMP_PDB_STRING, (gchar*)"raw-filename", (gchar*)"The name entered"}
     };
 
-    // Load return values
+    // Load procedure return values
     static const GimpParamDef load_return_values[] =
     {
         {GIMP_PDB_IMAGE, (gchar*)"image", (gchar*)"Output image"}
@@ -36,11 +36,11 @@ static void query(void)
                            G_N_ELEMENTS(load_return_values),
                            load_args,
                            load_return_values);
-    // Register load handlers
+    // Register Load handlers
     gimp_register_file_handler_mime(LOAD_PROCEDURE, "image/plt");
     gimp_register_load_handler(LOAD_PROCEDURE, "plt", "");
 
-    // Save arguments
+    // Save procedure arguments
     static const GimpParamDef save_args[] =
     {
         {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
@@ -64,18 +64,18 @@ static void query(void)
                            0,
                            save_args,
                            NULL);
-    // Register save handlers
+    // Register Save handlers
     gimp_register_file_handler_mime(SAVE_PROCEDURE, "image/plt");
     gimp_register_save_handler(SAVE_PROCEDURE, "plt", "");
 
-     // Add layer arguments
+     // Add Layers procedure arguments
     static const GimpParamDef addl_args[] =
     {
         {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
         {GIMP_PDB_IMAGE,    (gchar*)"image",        (gchar*)"Input image" }
     };
 
-    // Install "Add Layers" procedure
+    // Install Add Layers procedure
     gimp_install_procedure(ADDL_PROCEDURE,
                            "Add plt layers",
                            "Add plt layers",
@@ -89,6 +89,7 @@ static void query(void)
                            0,
                            addl_args,
                            NULL);
+    // Register Add Layers handlers
     gimp_plugin_menu_register(ADDL_PROCEDURE, "<Image>/Tools");
 }
 

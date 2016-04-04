@@ -3,9 +3,9 @@ GIMPTOOL = gimptool-2.0
 
 CC = gcc
 
-LIBS := $(shell $(GIMPTOOL) --libs) -lm
+LIBS += -lm $(shell pkg-config --libs gimpui-2.0)
 
-CFLAGS := $(shell $(GIMPTOOL) --cflags)
+CFLAGS += $(shell pkg-config --cflags gimpui-2.0)
 
 OUTDIR = bin
 

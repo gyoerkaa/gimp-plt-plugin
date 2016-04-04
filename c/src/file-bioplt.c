@@ -83,7 +83,7 @@ static void query(void)
                            "GPL v3",
                            "2016",
                            "Add missing plt layers",
-                           "RGB*",
+                           "*",
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(addl_args),
                            0,
@@ -343,11 +343,18 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     plt_height = gimp_image_height(image_id);
     img_basetype = gimp_image_base_type(image_id);
 
-    gimp_progress_init_printf ("Exporting %s", filename);
+    gimp_progress_init_printf("Exporting %s", filename);
     gimp_progress_update(0.0);
 
-    // Try to find the 10 plt layers by looking for matching layer names
+
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    if (img_num_layers < PLT_NUM_LAYERS)
+    {
+        g_message("Requires an image with at least 10 layers.\n");
+        g_free(img_layer_ids);
+        return (GIMP_PDB_EXECUTION_ERROR);
+    }
+
     max_layer_id  = -1;
     for (i = 0; i < img_num_layers; i++)
     {
@@ -356,6 +363,8 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
             max_layer_id = img_layer_ids[i];
         }
     }
+
+    // Try to find the 10 plt layers by looking for matching layer names
     plt_layer_ids = g_malloc(sizeof(gint)*max_layer_id);
     for (i = 0; i < max_layer_id; i++)
     {
@@ -374,18 +383,12 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         }
     }
     // If we can't find the layers by name, use the 10 topmost layers instead
+    // (Interpreted as tattoo2, tattoo1, ... from the top)
     if (detected_plt_layers < PLT_NUM_LAYERS)
     {
-        if (img_num_layers < PLT_NUM_LAYERS)
-        {
-            g_message("Requires an image with at least 10 layers.\n");
-            g_free(img_layer_ids);
-            g_free(plt_layer_ids);
-            return (GIMP_PDB_EXECUTION_ERROR);
-        }
         for (i = 0; i < PLT_NUM_LAYERS; i++)
         {
-            plt_layer_ids[i] = img_layer_ids[i];
+            plt_layer_ids[img_layer_ids[i]] = PLT_NUM_LAYERS-i-1;
         }
     }
 
@@ -483,11 +486,11 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(buffer, 1, 2*num_px, stream);
 
     fclose(stream);
-
+    printf("free \n");
     g_free(buffer);
     g_free(img_layer_ids);
     g_free(plt_layer_ids);
-
+    printf("end \n");
     return (GIMP_PDB_SUCCESS);
 }
 

@@ -486,11 +486,11 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(buffer, 1, 2*num_px, stream);
 
     fclose(stream);
-    printf("free \n");
+
     g_free(buffer);
     g_free(img_layer_ids);
     g_free(plt_layer_ids);
-    printf("end \n");
+
     return (GIMP_PDB_SUCCESS);
 }
 

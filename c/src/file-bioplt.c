@@ -29,7 +29,7 @@ static void query(void)
                            "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
-                           "Packed Layer Texture",
+                           "<Load>/Packed Layer Texture",
                            NULL,
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(load_args),
@@ -57,7 +57,7 @@ static void query(void)
                            "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
-                           "Packed Layer Texture",
+                           "<Save>/Packed Layer Texture",
                            "RGB*",
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(save_args),
@@ -71,8 +71,8 @@ static void query(void)
      // Add Layers procedure arguments
     static const GimpParamDef addl_args[] =
     {
-        {GIMP_PDB_INT32,    (gchar*)"run-mode",     (gchar*)"Interactive, non-interactive" },
-        {GIMP_PDB_IMAGE,    (gchar*)"image",        (gchar*)"Input image" }
+        {GIMP_PDB_INT32, (gchar*)"run-mode", (gchar*)"Interactive, non-interactive" },
+        {GIMP_PDB_IMAGE, (gchar*)"image",    (gchar*)"Input image" }
     };
 
     // Install Add Layers procedure
@@ -184,7 +184,6 @@ static void run(const gchar      *name,
     {
         return_values[0].data.d_status = GIMP_PDB_CALLING_ERROR;
     }
-
 }
 
 
@@ -193,9 +192,8 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     FILE *stream = 0;
     unsigned int i;
 
-    // Using uint for guaranteed sizes across all systems.
-    // guint may do the trick too, but GTK's documentation for guint
-    // is ambiguous.
+    // Using uint for guaranteed sizes across all systems
+    // guint may or may not work (?)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
@@ -217,7 +215,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
-    gimp_progress_init_printf ("Opening %s", filename);
+    gimp_progress_init_printf("Opening %s", filename);
     gimp_progress_update(0.0);
 
     // Read header: Version, should be 8x1 bytes = "PLT V1  "
@@ -227,8 +225,9 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         fclose(stream);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
-    if (strcmp(plt_version, PLT_HEADER_VERSION) != 0)
+    if (g_ascii_strncasecmp(plt_version, PLT_HEADER_VERSION, 8) != 0)
     {
+        
         g_message("Invalid plt file: Version mismatch.\n");
         fclose(stream);
         return (GIMP_PDB_EXECUTION_ERROR);

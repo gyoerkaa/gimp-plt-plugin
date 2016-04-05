@@ -227,7 +227,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     }
     if (g_ascii_strncasecmp(plt_version, PLT_HEADER_VERSION, 8) != 0)
     {
-        
+
         g_message("Invalid plt file: Version mismatch.\n");
         fclose(stream);
         return (GIMP_PDB_EXECUTION_ERROR);

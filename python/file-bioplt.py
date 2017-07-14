@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -17,20 +18,18 @@
 # ##### END GPL LICENSE BLOCK #####
 
 
-'''
-Short plt File documentation:
-
-P  L  T     V  1
-50 4C 54 20 56 31 20 20
-Random ? But this 8 bytes always work
-0A 00 00 00 00 00 00 00
-width
-00 00 00 00
-height
-00 00 00 00
-The rest is data
-AA 00 BB 01 ..., with AA 00 = (value, layer), BB 01 = (value, layer)
-'''
+# Plt File documentation
+#
+# First 8 bytes: "PLT V1  "
+# 50 4C 54 20 56 31 20 20
+# Next 8 bytes: Random? But these 8 bytes always work
+# 0A 00 00 00 00 00 00 00
+# Next 4 bytes: width
+# 00 00 00 00
+# Next 4 bytes: height
+# 00 00 00 00
+# The rest is data:
+# AA 00 BB 01 ..., with AA 00 = (value, layer), BB 01 = (value, layer)
 
 
 import os
@@ -40,8 +39,8 @@ from gimpfu import *
 
 
 # Don't change order, keep everything lowercase
-plt_layernames   = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
-                    "leather1", "leather2", "tattoo1", "tattoo2"]
+plt_layernames = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
+                  "leather1", "leather2", "tattoo1", "tattoo2"]
 
 
 def plt_load(filename, raw_filename):
@@ -58,15 +57,15 @@ def plt_load(filename, raw_filename):
     raw = f.read()
     f.close()
     data = struct.unpack(str(len(raw))+'B', raw)
-    px   = [list(t) for t in zip(*2*[iter(data)])]
+    px = [list(t) for t in zip(*2*[iter(data)])]
 
     # Create a new image
-    img          = gimp.Image(width, height, GRAY)
+    img = gimp.Image(width, height, GRAY)
     img.filename = os.path.split(filename)[1]
     img.disable_undo()
 
     # Create Layers
-    layerlist  = []
+    layerlist = []
     for layername in plt_layernames:
         lay = gimp.Layer(img, layername, width, height, GRAYA_IMAGE, 100, NORMAL_MODE)
         lay.fill(TRANSPARENT_FILL)
@@ -79,7 +78,7 @@ def plt_load(filename, raw_filename):
     gimp.progress_update(0)
 
     # for speed
-    l_int   = int
+    l_int = int
     l_float = float
     l_floor = math.floor
 
@@ -115,9 +114,9 @@ def plt_save(img, drawable, filename, raw_filename):
     numpx = width * height
 
     # for speed
-    l_int       = int
-    l_float     = float
-    l_floor     = math.floor
+    l_int = int
+    l_float = float
+    l_floor = math.floor
     l_picklayer = img.pick_correlate_layer
 
     if img.base_type == GRAY:

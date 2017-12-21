@@ -210,7 +210,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     FILE *stream = 0;
     unsigned int i;
 
-    // Using uint for guaranteed sizes across all systems
+    // Using uint instead of guint for guaranteed sizes
     // guint may or may not work (?)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;

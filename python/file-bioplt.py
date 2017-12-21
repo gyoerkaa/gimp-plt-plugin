@@ -35,62 +35,93 @@
 import os
 import struct
 
+from array import array
 from gimpfu import *
 
 
 # Don't change order, keep everything lowercase
-plt_layernames = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
-                  "leather1", "leather2", "tattoo1", "tattoo2"]
+PLT_LAYERS = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
+              "leather1", "leather2", "tattoo1", "tattoo2"]
 
 
-def plt_load(filename, raw_filename):
+def plt_load2(filename, raw_filename):
     f = open(filename, 'rb')
-
-    # First 16 bytes contain header
-    header = struct.unpack('<16s', f.read(16))
+    # First 24 bytes contain header
+    header = struct.unpack('<16s2I', f.read(24))
     if header[0][0:7] == 'PLT V1  ':
         gimp.pdb.gimp_message('Not a valid plt file' + header[0][0:8])
+        f.close()
         return 1
-    # Next 8 bytes contain width and height
-    (width, height) = struct.unpack('<II', f.read(8))
-    # The rest contains (color, layer) tuples (both unsigned char (?))
-    raw = f.read()
+    (width, height) = header[1], header[2]
+    # The rest contains (color, layer) tuples - 1 byte for each value
+    num_px = width * height
+    px_data = [struct.unpack('<2B', f.read(2)) for i in xrange(num_px)]
     f.close()
-    data = struct.unpack(str(len(raw))+'B', raw)
-    px = [list(t) for t in zip(*2*[iter(data)])]
-
+    # Adjust coordinate system
+    px_data = [p for i in range(height) for p in px_data[(height*width)-((i+1)*width):(height*width)-(i*width)]]
     # Create a new image
     img = gimp.Image(width, height, GRAY)
     img.filename = os.path.split(filename)[1]
     img.disable_undo()
-
     # Create Layers
-    layerlist = []
-    for layername in plt_layernames:
-        lay = gimp.Layer(img, layername, width, height, GRAYA_IMAGE, 100, NORMAL_MODE)
-        lay.fill(TRANSPARENT_FILL)
-        img.insert_layer(layer = lay, position = 0)
-        layerlist.append(lay)
-
-    # Write data to layers
-    numvals = len(px)
-    gimp.progress_init("Writing data to Gimp layers ...")
+    num_layers = len(PLT_LAYERS)
+    gimp.progress_init("Creating layers ...")
     gimp.progress_update(0)
-
-    # for speed
-    l_int = int
-    l_float = float
-    l_floor = math.floor
-
-    for i, (val, layer_idx) in enumerate(px):
-        x = l_int(i % width)
-        y = height - l_int(l_floor(i / width)) - 1
-        layerlist[layer_idx].set_pixel(x, y, [val, 255])
-        gimp.progress_update(l_float(i)/l_float(numvals))
-
+    for lidx, lname in enumerate(PLT_LAYERS):
+        # Create layer
+        lay = gimp.Layer(img, lname, width, height, GRAYA_IMAGE, 100, NORMAL_MODE)
+        img.insert_layer(layer = lay, position = 0)
+        # Get region and write data
+        rgn = lay.get_pixel_rgn(0, 0, width, height, True, True)
+        lay_px = [[px[0], 255] if px[1] == lidx else [0,0] for px in px_data]
+        lay_px_data = array('B', [i for sl in lay_px for i in sl]).tostring()
+        rgn[0:width, 0:height] = lay_px_data
+        # Update image and progress
+        lay.flush()
+        lay.merge_shadow(TRUE)
+        lay.update(0, 0, width, height)
+        gimp.progress_update(float(lidx/num_layers))
+    gimp.progress_update(1)
     img.enable_undo()
     return img
 
+
+def plt_save2(img, drawable, filename, raw_filename):
+    f = open(filename, 'wb')
+    # Get img data
+    width  = img.width
+    height = img.height
+    num_px = width * height
+    # Write header
+    pltdata = struct.pack('<8s', 'PLT V1  ')
+    pltfile.write(pltdata)
+    pltdata = struct.pack('<II', 10, 0)
+    pltfile.write(pltdata)
+    pltdata = struct.pack('<II', width, height)
+    pltfile.write(pltdata)
+    
+    plt_data   = []
+    # Search for layers containing plt data:
+    # - First: By names
+    # - Second: By order (if no names are found)
+    plt_layer_ids = []
+    for lid, lname in enumerate(PLT_LAYERS):
+        if lname.lower() in img.layers:
+            plt_layer_ids.append(img.layers)
+            
+     
+    gimp.progress_init("Reading data from Gimp layers ...")
+    gimp.progress_update(0)
+    if img.base_type == GRAY:
+        for lid in plt_layer_ids:
+            gimp.progress_update(float(lid/len(layer_ids)))
+    elif img.base_type == RGB:
+        for lid in plt_layer_ids:
+            gimp.progress_update(float(lid/len(layer_ids)))
+    else: # Indexed, do nothing
+        f.close()
+        return
+    f.close()
 
 def plt_save(img, drawable, filename, raw_filename):
     pltfile = open(filename, 'wb')
@@ -127,7 +158,7 @@ def plt_save(img, drawable, filename, raw_filename):
             if layer >= 0:
                 pxVal = layer.get_pixel(x,y)[0]
                 try:
-                    pxLayer = plt_layernames.index(layer.name.lower())
+                    pxLayer = PLT_LAYERS.index(layer.name.lower())
                 except ValueError:
                     pxLayer = 0
             else:
@@ -145,7 +176,7 @@ def plt_save(img, drawable, filename, raw_filename):
             if layer >= 0:
                 pxVal = (layer.get_pixel(x,y)[0] + layer.get_pixel(x,y)[1] + layer.get_pixel(x,y)[2]) / 3
                 try:
-                    pxLayer = plt_layernames.index(layer.name.lower())
+                    pxLayer = PLT_LAYERS.index(layer.name.lower())
                 except ValueError:
                     pxLayer = 0
             else:
@@ -176,7 +207,7 @@ def plt_create_layers(img):
     for layer in img.layers:
         img_layernames.append(layer.name.lower())
 
-    for layername in plt_layernames:
+    for layername in PLT_LAYERS:
         # We don't want to create already existing plt layers
         if layername not in img_layernames:
             lay = gimp.Layer(img, layername, img.width, img.height, layer_type, 100, NORMAL_MODE)
@@ -210,7 +241,7 @@ register(
         (PF_STRING, 'raw_filename', 'The name entered', None),
     ],
     [(PF_IMAGE, 'image', 'Output image')], #results (type, name, description)
-    plt_load, #callback
+    plt_load2, #callback
     on_query = register_load_handlers,
     menu = "<Load>",
 )

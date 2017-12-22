@@ -39,7 +39,9 @@ from array import array
 from gimpfu import *
 
 
-# Don't change order, keep everything lowercase
+# New layers can easily be added by extending this list, the script
+# will automatically include them
+# Add them to the end, list-position = plt-layer-idx (skin = 0)
 PLT_LAYERS = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2", \
               "leather1", "leather2", "tattoo1", "tattoo2"]
 
@@ -53,16 +55,18 @@ def plt_load2(filename, raw_filename):
         f.close()
         return 1
     (width, height) = header[1], header[2]
-    # The rest contains (color, layer) tuples - 1 byte for each value
+    # Now read (color, layer) tuples - 1 byte for each value
     num_px = width * height
-    px_data = [struct.unpack('<2B', f.read(2)) for i in xrange(num_px)]
+    plt_pixels = [struct.unpack('<2B', f.read(2)) for i in xrange(num_px)]
     f.close()
-    # Adjust coordinate system
-    px_data = [p for i in range(height) for p in px_data[(height*width)-((i+1)*width):(height*width)-(i*width)]]
+    # Adjust coordinates
+    plt_pixels = [p for i in range(height) for p in plt_pixels[(height*width)-((i+1)*width):(height*width)-(i*width)]]
+    
     # Create a new image
     img = gimp.Image(width, height, GRAY)
     img.filename = os.path.split(filename)[1]
     img.disable_undo()
+    
     # Create Layers
     num_layers = len(PLT_LAYERS)
     gimp.progress_init("Creating layers ...")
@@ -72,15 +76,16 @@ def plt_load2(filename, raw_filename):
         lay = gimp.Layer(img, lname, width, height, GRAYA_IMAGE, 100, NORMAL_MODE)
         img.insert_layer(layer = lay, position = 0)
         # Get region and write data
-        rgn = lay.get_pixel_rgn(0, 0, width, height, True, True)
-        lay_px = [[px[0], 255] if px[1] == lidx else [0,0] for px in px_data]
+        region = lay.get_pixel_rgn(0, 0, width, height, True, True)
+        lay_px = [[px[0], 255] if px[1] == lidx else [0,0] for px in plt_pixels]
         lay_px_data = array('B', [i for sl in lay_px for i in sl]).tostring()
-        rgn[0:width, 0:height] = lay_px_data
+        region[0:width, 0:height] = lay_px_data
         # Update image and progress
         lay.flush()
         lay.merge_shadow(TRUE)
         lay.update(0, 0, width, height)
         gimp.progress_update(float(lidx/num_layers))
+    
     gimp.progress_update(1)
     img.enable_undo()
     return img
@@ -93,35 +98,65 @@ def plt_save2(img, drawable, filename, raw_filename):
     height = img.height
     num_px = width * height
     # Write header
-    pltdata = struct.pack('<8s', 'PLT V1  ')
-    pltfile.write(pltdata)
-    pltdata = struct.pack('<II', 10, 0)
-    pltfile.write(pltdata)
-    pltdata = struct.pack('<II', width, height)
-    pltfile.write(pltdata)
+    plt_data = struct.pack('<8s2I2I', 'PLT V1  ', 10, 0, width, height)
+    f.write(plt_data)
     
-    plt_data   = []
-    # Search for layers containing plt data:
-    # - First: By names
-    # - Second: By order (if no names are found)
+    # Search for layers containing plt data and save which plt layer 
+    # corresponds to which gimp layer
+    # 1. Look for matching names
     plt_layer_ids = []
-    for lid, lname in enumerate(PLT_LAYERS):
-        if lname.lower() in img.layers:
-            plt_layer_ids.append(img.layers)
-            
-     
-    gimp.progress_init("Reading data from Gimp layers ...")
+    for lay_id, layer in enumerate(img.layers):
+        if layer.visible and layer.name.lower() in PLT_LAYERS:
+            plt_layer_ids.append((PLT_LAYERS.index(layer.name.lower()), lay_id))
+    # 2. Fallback: No layers haven been found
+    #              Use the 10 top most layers instead
+    if not plt_layer_ids:
+        plt_layer_ids = [(lay_id, lay_id) for lay_id, layer in enumerate(img.layers)]
+    
+    gimp.progress_init("Creating file ...")
+    print("Creating file ...")
     gimp.progress_update(0)
+    plt_pixels = [[255, 0] for i in xrange(num_px)]
+    plt_pixels = array('B', [255, 0]*num_px)
     if img.base_type == GRAY:
-        for lid in plt_layer_ids:
-            gimp.progress_update(float(lid/len(layer_ids)))
+        for plt_id, lay_id in plt_layer_ids:
+            layer = img.layers[lay_id]
+            if not layer.has_alpha:
+                pass
+            region = layer.get_pixel_rgn(0, 0, width, height, False, False)
+            lay_pixels = array('B', region[0:width, 0:height])
+            print(lay_pixels[::region.bpp])
+            for i in xrange(0, num_px*region.bpp, region.bpp):
+                plt_pixels = [ lay_pixels[::region.bpp]]
+            gimp.progress_update(float(lay_id/len(plt_layer_ids)))
+            # if not img.layers[lay_id].has_alpha:
+        """
+        for plt_id, lay_id in plt_layer_ids:
+            region = img.layers[lay_id].get_pixel_rgn(0, 0, width, height, False, False)
+            # print(img.layers[lay_id].has_alpha)
+            lay_pixels = array('B', region[0:width, 0:height])
+            print(lay_pixels)
+            # print(len(lay_pixels))
+            for i in xrange(0, num_px, region.bpp):
+                if lay_pixels[i] > 0:
+                    plt_pixels[i] = [lay_pixels[i], plt_id]
+            print(plt_pixels)
+            # plt_pixels = [[lay_pixels[i], plt_id] if lay_pixels[i] > 0 else plt_pixels[i] for i in xrange(0, num_px, region.bpp)]
+            gimp.progress_update(float(lay_id/len(plt_layer_ids)))
+        """
     elif img.base_type == RGB:
-        for lid in plt_layer_ids:
-            gimp.progress_update(float(lid/len(layer_ids)))
+        for plt_id, lay_id in plt_layer_ids:
+            gimp.progress_update(float(lay_id/len(plt_layer_ids)))
     else: # Indexed, do nothing
         f.close()
         return
+    
+    plt_pixels.tofile(f)
+    # plt_data = struct.pack('<' + str(num_px*2) + 'B', *[i for sl in plt_pixels for i in sl])
+    #f.write(plt_data)
+    gimp.progress_update(1)
     f.close()
+
 
 def plt_save(img, drawable, filename, raw_filename):
     pltfile = open(filename, 'wb')
@@ -255,7 +290,7 @@ register(
     'GPL v3', #copyright
     '2015', #year
     'Packed Layer Texture',
-    '*',
+    'RGB*, GRAY*',
     [   #input args (type, name, description, default [, extra])
         (PF_IMAGE, "image", "Input image", None),
         (PF_DRAWABLE, "drawable", "Input drawable", None),
@@ -263,7 +298,7 @@ register(
         (PF_STRING, "raw-filename", "The name of the file", None),
     ],
     [], #results (type, name, description)
-    plt_save, #callback
+    plt_save2, #callback
     on_query = register_save_handlers,
     menu = '<Save>'
 )

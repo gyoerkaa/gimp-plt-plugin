@@ -25,11 +25,13 @@
 #define SAVE_PROCEDURE "file-bioplt-save"
 #define ADDL_PROCEDURE "file-bioplt-addl"
 
-#define PLT_NUM_LAYERS 10
 #define PLT_HEADER_VERSION "PLT V1  "
+#define PLT_NUM_LAYERS 10
 
-// Don't change order, keep everything lowercase
-const gchar *plt_layernames[PLT_NUM_LAYERS]  = {
+// New layers can easily be added by extending this list, they
+// will automatically be included
+// Add them to the end, list-position = plt-layer-idx (skin = 0)
+const gchar *PLT_LAYERS[PLT_NUM_LAYERS]  = {
     "skin",
     "hair",
     "metal1",

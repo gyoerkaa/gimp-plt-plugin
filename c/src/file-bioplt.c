@@ -208,21 +208,24 @@ static void run(const gchar      *name,
 static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 {
     FILE *stream = 0;
-    unsigned int i;
+    unsigned int i, j;
 
     // Using uint instead of guint for guaranteed sizes
-    // guint may or may not work (?)
+    // (not 100% sure if guint works)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
-    uint8_t *buffer;
+    uint8_t *plt_data;
+    uint8_t *layer_data;
 
     uint8_t px_value = 0;
     uint8_t px_layer = 0;
     uint32_t num_px = 0;
 
-    gint32 newImgID   = -1;
-    gint32 newLayerID = -1;
+    gint32 img_id = -1;
+    gint32 layer_id = -1;
+    GimpPixelRgn region;
+    GimpDrawable *drawable;
     gint32 plt_layer_ids[PLT_NUM_LAYERS];
     guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
@@ -233,7 +236,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
-    gimp_progress_init_printf("Opening %s", filename);
+    gimp_progress_init_printf("Creating layers...");
     gimp_progress_update(0.0);
 
     // Read header: Version, should be 8x1 bytes = "PLT V1  "
@@ -268,59 +271,75 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     }
 
     // Create a new image
-    newImgID = gimp_image_new(plt_width, plt_height, GIMP_GRAY);
-    if(newImgID == -1)
+    img_id = gimp_image_new(plt_width, plt_height, GIMP_GRAY);
+    if(img_id == -1)
     {
         g_message("Unable to allocate new image.\n");
         fclose(stream);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
-    gimp_image_set_filename(newImgID, filename);
-
-    // Create the 10 plt layers, add them to the new image and save their ID's
-    for (i = 0; i < PLT_NUM_LAYERS; i++)
-    {
-        newLayerID = gimp_layer_new(newImgID,
-                                    plt_layernames[i],
-                                    plt_width, plt_height,
-                                    GIMP_GRAYA_IMAGE,
-                                    100.0,
-                                    GIMP_NORMAL_MODE);
-        gimp_image_insert_layer(newImgID, newLayerID, 0, 0);
-        plt_layer_ids[i] = newLayerID;
-    }
+    gimp_image_set_filename(img_id, filename);
 
     // Read image data
     // Expecting width*height (value, layer) tuples = 2*width*height bytes
     num_px = plt_width * plt_height;
-    buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
-    if (fread(buffer, 1, 2*num_px, stream) < (2*num_px))
+    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
+    if (fread(plt_data, 1, 2*num_px, stream) < (2*num_px))
     {
         g_message("Image size mismatch.\n");
         fclose(stream);
-        g_free(buffer);
-        gimp_image_delete(newImgID);
+        g_free(plt_data);
+        gimp_image_delete(img_id);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
-    for (i = 0; i < num_px; i++)
-    {
-        pixel[0] = buffer[2*i];
-        px_layer = buffer[2*i+1];
-        gimp_drawable_set_pixel(plt_layer_ids[px_layer],
-                                i % plt_width,
-                                plt_height - (int)(floor(i / plt_width)) - 1,
-                                2,
-                                pixel);
-        gimp_progress_update((float) i/ (float) num_px);
-    }
-    gimp_progress_update(1.0);
-    gimp_image_set_active_layer(newImgID, plt_layer_ids[0]);
-
     fclose(stream);
 
-    g_free(buffer);
-
-    *image_id = newImgID;
+    // Write data into layers
+    layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
+    gimp_progress_update(0.0);
+    for (i = 0; i < PLT_NUM_LAYERS; i++)
+    {
+        layer_id = gimp_layer_new(img_id,
+                                  PLT_LAYERS[i],
+                                  plt_width, plt_height,
+                                  GIMP_GRAYA_IMAGE,
+                                  100.0,
+                                  GIMP_NORMAL_MODE);
+        drawable = gimp_drawable_get(layer_id);
+        gimp_pixel_rgn_init (&region, drawable,
+                             0, 0, plt_width, plt_height,
+                             TRUE, FALSE);
+        // Grab the pixels belonging to this layer
+        for (j = 0; j < 2*num_px; j+=2)
+        {
+            if (plt_data[j+1] == i)
+            {
+                layer_data[j] = plt_data[j];
+                layer_data[j+1] = 255;
+            }
+            else
+            {
+                layer_data[j] = 0;
+                layer_data[j+1] = 0;
+            }
+        }
+        gimp_pixel_rgn_set_rect(&region,
+                                layer_data,
+                                0, 0,
+                                plt_width, plt_height);
+        gimp_drawable_flush(drawable);
+        gimp_drawable_detach(drawable);
+        gimp_image_insert_layer(img_id, layer_id, 0, 0);
+        gimp_progress_update((float) i/ (float) PLT_NUM_LAYERS);
+    }
+    gimp_progress_update(1.0);
+    gimp_image_set_active_layer(img_id, layer_id);
+    // Cleanup
+    g_free(layer_data);
+    g_free(plt_data);
+    // Adjust coordinate systems
+    gimp_image_flip(img_id, GIMP_ORIENTATION_VERTICAL);
+    *image_id = img_id;
     return (GIMP_PDB_SUCCESS);
 }
 
@@ -328,27 +347,30 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 {
     FILE *stream = 0;
-    unsigned int i, j;
+    unsigned int i, j, k;
 
     uint8_t  plt_version[8] = PLT_HEADER_VERSION;
-    uint8_t  plt_info[8]    = {10, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t  plt_info[8] = {10, 0, 0, 0, 0, 0, 0, 0};
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
+    uint8_t  plt_id = 0;
+    uint8_t *plt_data;
+    uint8_t *layer_data;
 
-    uint8_t *buffer;
-    uint8_t *pixel;
     uint32_t num_px = 0;
+    gint32 detected_layers = 0;
+    gint bpp;
+    uint8_t cval, aval;
 
     GimpImageBaseType img_basetype;
     gint img_num_layers; // num layers in image
     gint *img_layer_ids; // all layers in image
-    gint32 layer_id;
-    gint *plt_layer_ids;
-    gint max_layer_id;
-    gint32 detected_plt_layers = 0;
-    gint x, y;
+    gint *plt_layer_ids; // valid plt layers
+    gint layer_id;
+    gchar *layer_name;
 
-    gint num_channels; // Channels in image
+    GimpDrawable *drawable;
+    GimpPixelRgn region;
 
     // Only get image data if it's valid
     if (!gimp_image_is_valid(image_id))
@@ -356,140 +378,127 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         g_message("Invalid image.\n");
         return (GIMP_PDB_EXECUTION_ERROR);
     }
-    plt_width  = gimp_image_width(image_id);
+    plt_width = gimp_image_width(image_id);
     plt_height = gimp_image_height(image_id);
+
+    // Make sure image is not indexed
     img_basetype = gimp_image_base_type(image_id);
-
-    gimp_progress_init_printf("Exporting %s", filename);
-    gimp_progress_update(0.0);
-
-
-    img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
-    if (img_num_layers < PLT_NUM_LAYERS)
+    if (img_basetype == GIMP_INDEXED)
     {
-        g_message("Requires an image with at least 10 layers.\n");
-        g_free(img_layer_ids);
+        g_message("Image type has to be Grayscale or RGB.\n");
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
-    max_layer_id  = -1;
+    // Search for layers containing plt data and save which plt layer
+    // corresponds to which gimp layer
+    // 1. Look for matching names
+    printf("Gathering Layers\n");
+    img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    plt_layer_ids = g_malloc(sizeof(gint)*PLT_NUM_LAYERS*2);
+    for (j = 0; j < PLT_NUM_LAYERS; j++)
+    {
+        plt_layer_ids[j] = j;
+        plt_layer_ids[j+PLT_NUM_LAYERS] = -1;
+    }
+    detected_layers = 0;
+    printf("....num layers: %d\n", img_num_layers);
     for (i = 0; i < img_num_layers; i++)
     {
-        if (img_layer_ids[i] > max_layer_id)
+        layer_name = gimp_item_get_name(img_layer_ids[i]);
+        printf("....checking %s\n", layer_name);
+        for (j = 0; j < PLT_NUM_LAYERS; j++)
         {
-            max_layer_id = img_layer_ids[i];
-        }
-    }
-
-    // Try to find the 10 plt layers by looking for matching layer names
-    plt_layer_ids = g_malloc(sizeof(gint)*max_layer_id);
-    for (i = 0; i < max_layer_id; i++)
-    {
-        plt_layer_ids[i] = -1;
-    }
-    for (i = 0; i < PLT_NUM_LAYERS; i++)
-    {
-        for (j = 0; j < img_num_layers; j++)
-        {
-            if (!g_ascii_strcasecmp(plt_layernames[i], gimp_item_get_name(img_layer_ids[j])))
+            if (!g_ascii_strcasecmp(PLT_LAYERS[j], layer_name))
             {
-                plt_layer_ids[img_layer_ids[j]] = i;
-                detected_plt_layers++;
-                break;
+                plt_layer_ids[j] = j;
+                plt_layer_ids[j+PLT_NUM_LAYERS] = img_layer_ids[i];
+                printf("........valid %d , %d\n", j, img_layer_ids[i]);
+                detected_layers++;
             }
         }
+
     }
-    // If we can't find the layers by name, use the 10 topmost layers instead
-    // (Interpreted as tattoo2, tattoo1, ... from the top)
-    if (detected_plt_layers < PLT_NUM_LAYERS)
+    // 2. Fallback, use the n topmost layers, if no layers have been detected
+    if (detected_layers <= 0)
     {
-        for (i = 0; i < PLT_NUM_LAYERS; i++)
+        for (j = 0; ((j < PLT_NUM_LAYERS) && (j < img_num_layers)); j++)
         {
-            plt_layer_ids[img_layer_ids[i]] = PLT_NUM_LAYERS-i-1;
+            plt_layer_ids[j] = j;
+            plt_layer_ids[j+PLT_NUM_LAYERS] = img_layer_ids[j];
+            detected_layers++;
         }
     }
+    g_free(img_layer_ids);
 
-    // Write image data to buffer
+    // Init image data
+    printf("Init Image\n");
     num_px = plt_width * plt_height;
-    buffer = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
-    switch(img_basetype)
+    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
+    for (i = 0; i < 2*num_px; i+=2)
     {
-        case GIMP_GRAY:
+        plt_data[i] = 255;
+        plt_data[i+1] = 0;
+    }
+
+    // Generate image data
+    printf("Processing layers (%d)\n", detected_layers);
+    gimp_progress_init_printf("Processing layers...");
+    gimp_progress_update(0.0);
+    for (i = 0; i < detected_layers; i++)
+    {
+        plt_id = plt_layer_ids[i];
+        layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
+        printf("....plt layer id %d \n", plt_id);
+        drawable = gimp_drawable_get(layer_id);
+        gimp_pixel_rgn_init(&region, drawable,
+                            0, 0,
+                            plt_width, plt_height,
+                            FALSE, FALSE);
+        bpp = gimp_drawable_bpp(layer_id);
+        layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*num_px*bpp);
+        gimp_pixel_rgn_get_rect(&region,
+                                (uint8_t*) layer_data,
+                                0, 0,
+                                plt_width, plt_height);
+        if (gimp_drawable_has_alpha(layer_id))
         {
-            // Gray Image
-            // >= 1 channels: value (+ alpha). We ignore alpha though, so it
-            // doesn't matter wether its present or not.
-            for (i = 0; i < num_px; i++)
+            for (j = 0; j < bpp*num_px; j+=bpp)
             {
-                x = (gint)(i % plt_width);
-                y = plt_height - (gint)(floor(i / plt_width)) - 1;
-                layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
-                if ((layer_id >= 0) && (plt_layer_ids[layer_id] >= 0))
+                cval = 0;
+                for (k = 0; k < bpp-1; k++)
+                    cval += layer_data[j+k];
+                cval = cval / (bpp-1);
+                aval = layer_data[j+bpp-1];
+                if ((cval > 0) && (aval > 0))
                 {
-                    pixel = gimp_drawable_get_pixel(layer_id,
-                                                    x,
-                                                    y,
-                                                    &num_channels);
-                    buffer[2*i]   = pixel[0];
-                    buffer[2*i+1] = plt_layer_ids[layer_id];
+                    plt_data[j] = cval;
+                    plt_data[j+1] = plt_id;
                 }
-                else
-                {
-                    buffer[2*i]   = 255;
-                    buffer[2*i+1] = 0;
-                }
-                gimp_progress_update((float) i/ (float) num_px);
             }
-            break;
         }
-        case GIMP_RGB:
+        else
         {
-            // RGB Image
-            // >= 3 channels: r +g + b (+ alpha). We ignore alpha though, so it
-            // doesn't matter wether its present or not.
-            // We'll calculate gray value with (r+g+b)/3.
-            for (i = 0; i < num_px; i++)
+            for (j = 0; i < bpp*num_px; j+=bpp)
             {
-                x = (gint)(i % plt_width);
-                y = plt_height - (gint)(floor(i / plt_width)) - 1;
-                layer_id = gimp_image_pick_correlate_layer(image_id, x, y);
-                if ((layer_id >= 0) && (plt_layer_ids[layer_id] >= 0))
-                {
-                    pixel = gimp_drawable_get_pixel(layer_id,
-                                                    x,
-                                                    y,
-                                                    &num_channels);
-                    buffer[2*i]   = pixel[0];
-                    buffer[2*i+1] = plt_layer_ids[layer_id];
-                }
-                else
-                {
-                    buffer[2*i]   = 255;
-                    buffer[2*i+1] = 0;
-                }
-                gimp_progress_update((float) i/ (float) num_px);
+                cval = 0;
+                for (k = 0; k < bpp; k++)
+                    cval += layer_data[j+k];
+                cval = cval / bpp;
+                plt_data[j] = cval;
+                plt_data[j+1] = plt_id;
             }
-            break;
         }
-        case GIMP_INDEXED: // You're out of luck buddy
-        default:
-        {
-            g_message("Image type has to be Grayscale or RGB.\n");
-            g_free(buffer);
-            g_free(img_layer_ids);
-            g_free(plt_layer_ids);
-            return (GIMP_PDB_EXECUTION_ERROR);
-        }
+        gimp_progress_update((float) i/(float) detected_layers);
     }
     gimp_progress_update(1.0);
+    g_free(layer_data);
+    g_free(plt_layer_ids);
 
     stream = fopen(filename, "wb");
     if (stream == 0)
     {
         g_message("Error opening %s\n", filename);
-        g_free(buffer);
-        g_free(img_layer_ids);
-        g_free(plt_layer_ids);
+        g_free(plt_data);
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
@@ -500,13 +509,10 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(&plt_height, 4, 1, stream);
 
     // Write image data
-    fwrite(buffer, 1, 2*num_px, stream);
-
+    fwrite(plt_data, 1, 2*num_px, stream);
     fclose(stream);
 
-    g_free(buffer);
-    g_free(img_layer_ids);
-    g_free(plt_layer_ids);
+    g_free(plt_data);
 
     return (GIMP_PDB_SUCCESS);
 }
@@ -538,7 +544,7 @@ static GimpPDBStatusType plt_add_layers(gint32 image_id)
             layer_type = GIMP_RGBA_IMAGE;
             break;
         }
-        case GIMP_INDEXED: // You're still out of luck
+        case GIMP_INDEXED: // Doesn't work
         default:
         {
             g_message("Image type has to be Grayscale or RGB.\n");
@@ -557,7 +563,7 @@ static GimpPDBStatusType plt_add_layers(gint32 image_id)
         plt_layer_detected = FALSE;
         for (j = 0; j < img_num_layers; j++)
         {
-            if (!g_ascii_strcasecmp(plt_layernames[i], gimp_item_get_name(img_layer_ids[j])))
+            if (!g_ascii_strcasecmp(PLT_LAYERS[i], gimp_item_get_name(img_layer_ids[j])))
             {
                 plt_layer_detected = TRUE;
                 break;
@@ -566,7 +572,7 @@ static GimpPDBStatusType plt_add_layers(gint32 image_id)
         if (!plt_layer_detected)
         {
             layer_id = gimp_layer_new(image_id,
-                                      plt_layernames[i],
+                                      PLT_LAYERS[i],
                                       img_width, img_height,
                                       layer_type,
                                       100.0,

@@ -109,7 +109,6 @@ def plt_save(img, drawable, filename, raw_filename):
     # 1. Look for matching names
     plt_lay_ids = []
     for lay_id, layer in enumerate(img.layers):
-
         if layer.visible and layer.name.lower() in PLT_LAYERS:
             plt_lay_ids.append((PLT_LAYERS.index(layer.name.lower()), lay_id))
     # 2. Fallback: No layers haven been found
@@ -118,6 +117,7 @@ def plt_save(img, drawable, filename, raw_filename):
         plt_lay_ids = [(lay_id, lay_id)
                        for lay_id, layer in enumerate(img.layers)]
     num_layers = len(plt_lay_ids)
+    # Generate image data from layers
     gimp.progress_init("Processing layers...")
     gimp.progress_update(0.0)
     plt_px = [[255, 0] for i in xrange(num_px)]
@@ -129,12 +129,14 @@ def plt_save(img, drawable, filename, raw_filename):
             lay_px = array('B', region[0:width, 0:height])
             if lay.has_alpha:
                 for i in xrange(0, num_px*bpp, bpp):
-                    if lay_px[i+bpp-1] > 0:
-                        plt_px[i/bpp] = [lay_px[i], plt_id]
+                    cval = lay_px[i]
+                    aval = lay_px[i+1]
+                    if cval > 0 and aval > 0:
+                        plt_px[i/bpp] = [cval, plt_id]
             else:
                 for i in xrange(0, num_px*bpp, bpp):
-                    if lay_px[i+bpp-1] > 0:
-                        plt_px[i/bpp] = [lay_px[i], plt_id]
+                    cval = lay_px[i]
+                    plt_px[i/bpp] = [cval, plt_id]
             gimp.progress_update(float(plt_id+1)/float(num_layers))
     elif img.base_type == RGB:
         for plt_id, lay_id in reversed(plt_lay_ids):
@@ -144,14 +146,14 @@ def plt_save(img, drawable, filename, raw_filename):
             lay_px = array('B', region[0:width, 0:height])
             if lay.has_alpha:
                 for i in xrange(0, num_px*bpp, bpp):
-                    if lay_px[i+bpp-1] > 0:
-                        plt_px[i/bpp] = [int(sum(lay_px[i:i+bpp-1])/bpp),
-                                         plt_id]
+                    cval = int(sum(lay_px[i:i+bpp-1])/(bpp-1))
+                    aval = lay_px[i+bpp-1]
+                    if cval > 0 and aval > 0:
+                        plt_px[i/bpp] = [cval, plt_id]
             else:
                 for i in xrange(0, num_px*bpp, bpp):
-                    if lay_px[i+bpp-1] > 0:
-                        plt_px[i/bpp] = [int(sum(lay_px[i:i+bpp-1])/bpp),
-                                         plt_id]
+                    cval = int(sum(lay_px[i:i+bpp])/bpp)
+                    plt_px[i/bpp] = [cval, plt_id]
             gimp.progress_update(float(plt_id+1)/float(num_layers))
     else:  # Indexed, do nothing
         f.close()

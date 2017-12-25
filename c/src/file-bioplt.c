@@ -362,13 +362,13 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     gint bpp;
     uint8_t cval, aval;
 
-    GimpImageBaseType img_basetype;
     gint img_num_layers; // num layers in image
     gint *img_layer_ids; // all layers in image
     gint *plt_layer_ids; // valid plt layers
     gint layer_id;
     gchar *layer_name;
 
+    GimpImageBaseType img_basetype;
     GimpDrawable *drawable;
     GimpPixelRgn region;
 
@@ -380,6 +380,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     }
     plt_width = gimp_image_width(image_id);
     plt_height = gimp_image_height(image_id);
+    img_basetype = gimp_image_base_type(image_id);
 
     // Make sure image is not indexed
     img_basetype = gimp_image_base_type(image_id);
@@ -444,51 +445,102 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     printf("Processing layers (%d)\n", detected_layers);
     gimp_progress_init_printf("Processing layers...");
     gimp_progress_update(0.0);
-    for (i = 0; i < detected_layers; i++)
+    switch(img_basetype)
     {
-        plt_id = plt_layer_ids[i];
-        layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
-        printf("....plt layer id %d \n", plt_id);
-        drawable = gimp_drawable_get(layer_id);
-        gimp_pixel_rgn_init(&region, drawable,
-                            0, 0,
-                            plt_width, plt_height,
-                            FALSE, FALSE);
-        bpp = gimp_drawable_bpp(layer_id);
-        layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*num_px*bpp);
-        gimp_pixel_rgn_get_rect(&region,
-                                (uint8_t*) layer_data,
-                                0, 0,
-                                plt_width, plt_height);
-        if (gimp_drawable_has_alpha(layer_id))
+        case GIMP_GRAY:
         {
-            for (j = 0; j < bpp*num_px; j+=bpp)
+            // Same buffer for images with or without alpha to avoid having to
+            // allocate in loop
+            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*num_px*2);
+            for (i = 0; i < detected_layers; i++)
             {
-                cval = 0;
-                for (k = 0; k < bpp-1; k++)
-                    cval += layer_data[j+k];
-                cval = cval / (bpp-1);
-                aval = layer_data[j+bpp-1];
-                if ((cval > 0) && (aval > 0))
+                plt_id = plt_layer_ids[i];
+                layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
+                printf("....plt layer id %d \n", plt_id);
+                drawable = gimp_drawable_get(layer_id);
+                gimp_pixel_rgn_init(&region, drawable,
+                                    0, 0,
+                                    plt_width, plt_height,
+                                    FALSE, FALSE);
+                gimp_pixel_rgn_get_rect(&region,
+                                        (uint8_t*) layer_data,
+                                        0, 0,
+                                        plt_width, plt_height);
+                if (gimp_drawable_has_alpha(layer_id))
                 {
-                    plt_data[j] = cval;
-                    plt_data[j+1] = plt_id;
+                    for (j = 0; j < 2*num_px; j+=2)
+                    {
+                        cval = layer_data[j];
+                        aval = layer_data[j+1];
+                        if ((cval > 0) && (aval > 0))
+                        {
+                            plt_data[j] = cval;
+                            plt_data[j+1] = plt_id;
+                        }
+                    }
                 }
+                else
+                {
+                    // No alpha value means bottom layers are not visible
+                    // i.e. always overwrite everything
+                    for (j = 0; j < num_px; j++)
+                    {
+                        plt_data[j] = layer_data[j];
+                        plt_data[j+1] = plt_id;
+                    }
+                }
+                gimp_progress_update((float) i/(float) detected_layers);
             }
         }
-        else
+        case GIMP_RGB:
         {
-            for (j = 0; i < bpp*num_px; j+=bpp)
+            // Same buffer for images with or without alpha to avoid having to
+            // allocate in loop
+            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*num_px*4);
+            for (i = 0; i < detected_layers; i++)
             {
-                cval = 0;
-                for (k = 0; k < bpp; k++)
-                    cval += layer_data[j+k];
-                cval = cval / bpp;
-                plt_data[j] = cval;
-                plt_data[j+1] = plt_id;
+                plt_id = plt_layer_ids[i];
+                layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
+                drawable = gimp_drawable_get(layer_id);
+                gimp_pixel_rgn_init(&region, drawable,
+                                    0, 0,
+                                    plt_width, plt_height,
+                                    FALSE, FALSE);
+                gimp_pixel_rgn_get_rect(&region,
+                                        (uint8_t*) layer_data,
+                                        0, 0,
+                                        plt_width, plt_height);
+                if (gimp_drawable_has_alpha(layer_id))
+                {
+                    for (j = 0; j < 4*num_px; j+=4)
+                    {
+                        cval = layer_data[j] +
+                               layer_data[j+1] +
+                               layer_data[j+2];
+                        aval = layer_data[j+3];
+                        if ((cval > 0) && (aval > 0))
+                        {
+                            plt_data[j] = cval;
+                            plt_data[j+1] = plt_id;
+                        }
+                    }
+                }
+                else
+                {
+                    // No alpha value means bottom layers are not visible
+                    // i.e. always overwrite everything
+                    for (j = 0; j < 3*num_px; j+=3)
+                    {
+                        cval = layer_data[j] +
+                               layer_data[j+1] +
+                               layer_data[j+2];
+                        plt_data[j] = cval;
+                        plt_data[j+1] = plt_id;
+                    }
+                }
+                gimp_progress_update((float) i/(float) detected_layers);
             }
         }
-        gimp_progress_update((float) i/(float) detected_layers);
     }
     gimp_progress_update(1.0);
     g_free(layer_data);

@@ -131,7 +131,7 @@ def plt_save(img, drawable, filename, raw_filename):
                 for i in xrange(0, num_px*bpp, bpp):
                     cval = lay_px[i]
                     aval = lay_px[i+1]
-                    if cval > 0 and aval > 0:
+                    if aval > 0:
                         plt_px[i/bpp] = [cval, plt_id]
             else:
                 for i in xrange(0, num_px*bpp, bpp):
@@ -148,7 +148,7 @@ def plt_save(img, drawable, filename, raw_filename):
                 for i in xrange(0, num_px*bpp, bpp):
                     cval = int(sum(lay_px[i:i+bpp-1])/(bpp-1))
                     aval = lay_px[i+bpp-1]
-                    if cval > 0 and aval > 0:
+                    if aval > 0:
                         plt_px[i/bpp] = [cval, plt_id]
             else:
                 for i in xrange(0, num_px*bpp, bpp):

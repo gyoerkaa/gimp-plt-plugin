@@ -19,6 +19,7 @@
 #ifndef FILE_BIOPLT_H
 #define FILE_BIOPLT_H
 
+#include <stdint.h>
 #include <libgimp/gimp.h>
 
 #define LOAD_PROCEDURE "file-bioplt-load"
@@ -56,5 +57,9 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id);
 static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id);
 
 static GimpPDBStatusType plt_add_layers(gint32 image_id);
+
+static void flip_plt(uint8_t *pixels,
+                     const uint32_t width,
+                     const uint32_t height);
 
 #endif

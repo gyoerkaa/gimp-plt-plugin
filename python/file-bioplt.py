@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -31,19 +32,21 @@
 # The rest is data:
 # AA 00 BB 01 ..., with AA 00 = (value, layer), BB 01 = (value, layer)
 
+#import gi
+from gimpfu import *
 
 import os
 import struct
 
 from array import array
-from gimpfu import *
-
 
 # New layers can easily be added by extending this list, the script
 # will automatically include them
 # Add them to the end, list-position = plt-layer-idx (skin = 0)
 PLT_LAYERS = ["skin", "hair", "metal1", "metal2", "cloth1", "cloth2",
               "leather1", "leather2", "tattoo1", "tattoo2"]
+# Alpha value at which to consider a pixel of layer to be set, range [0,255]
+LAYER_ALPHA_CUTOFF = 0
 
 
 def plt_load(filename, raw_filename):
@@ -81,6 +84,7 @@ def plt_load(filename, raw_filename):
         # Get region and write data
         region = lay.get_pixel_rgn(0, 0, width, height, True, True)
         lay_px = [[px[0], 255] if px[1] == plt_id else [0, 0] for px in plt_px]
+        # Need to use tostring() to convert (in python2)
         lay_px_data = array('B', [i for sl in lay_px for i in sl]).tostring()
         region[0:width, 0:height] = lay_px_data
         # Update image and progress
@@ -108,58 +112,52 @@ def plt_save(img, drawable, filename, raw_filename):
     # corresponds to which gimp layer
     # 1. Look for matching names
     plt_lay_ids = []
-    for lay_id, layer in enumerate(img.layers):
-        if layer.visible and layer.name.lower() in PLT_LAYERS:
-            plt_lay_ids.append((PLT_LAYERS.index(layer.name.lower()), lay_id))
+    for lay_id, lay in enumerate(img.layers):
+        if lay.visible and lay.name.lower() in PLT_LAYERS:
+            plt_lay_ids.append((PLT_LAYERS.index(lay.name.lower()), lay_id))
     # 2. Fallback: No layers haven been found
     #              Use the 10 top most layers instead
     if not plt_lay_ids:
-        plt_lay_ids = [(lay_id, lay_id)
-                       for lay_id, layer in enumerate(img.layers)]
-    num_layers = len(plt_lay_ids)
+        plt_lay_ids = [(lay_id, lay_id) for lay_id, lay in enumerate(img.layers)]
+        
+    num_layers = len(plt_lay_ids)  # For progress update in UI
+    plt_px = [[255, 0] for _ in xrange(num_px)]
+    
     # Generate image data from layers
     gimp.progress_init("Processing layers...")
     gimp.progress_update(0.0)
-    plt_px = [[255, 0] for i in xrange(num_px)]
-    if img.base_type == GRAY:
-        for plt_id, lay_id in reversed(plt_lay_ids):
-            lay = img.layers[lay_id]
-            region = lay.get_pixel_rgn(0, 0, width, height, False, False)
-            bpp = region.bpp
-            lay_px = array('B', region[0:width, 0:height])
-            if lay.has_alpha:
-                for i in xrange(0, num_px*bpp, bpp):
-                    cval = lay_px[i]
-                    aval = lay_px[i+1]
-                    if aval > 0:
-                        plt_px[i/bpp] = [cval, plt_id]
-            else:
-                for i in xrange(0, num_px*bpp, bpp):
-                    cval = lay_px[i]
-                    plt_px[i/bpp] = [cval, plt_id]
-            gimp.progress_update(float(plt_id+1)/float(num_layers))
-    elif img.base_type == RGB:
-        for plt_id, lay_id in reversed(plt_lay_ids):
-            lay = img.layers[lay_id]
-            region = lay.get_pixel_rgn(0, 0, width, height, False, False)
-            bpp = region.bpp
-            lay_px = array('B', region[0:width, 0:height])
-            if lay.has_alpha:
-                for i in xrange(0, num_px*bpp, bpp):
-                    cval = int(sum(lay_px[i:i+bpp-1])/(bpp-1))
-                    aval = lay_px[i+bpp-1]
-                    if aval > 0:
-                        plt_px[i/bpp] = [cval, plt_id]
-            else:
-                for i in xrange(0, num_px*bpp, bpp):
-                    cval = int(sum(lay_px[i:i+bpp])/bpp)
-                    plt_px[i/bpp] = [cval, plt_id]
-            gimp.progress_update(float(plt_id+1)/float(num_layers))
-    else:  # Indexed, do nothing
-        f.close()
-        return
+    
+    # Create a temp image to handele resizing/cropping to image bounds 
+    # (cheaper tto let gimp handle it)
+    tmp_img = pdb.gimp_image_new(width, height, GRAY)
+    tmp_img.disable_undo()
+    for plt_id, lay_id in reversed(plt_lay_ids):
+        # Copy layer and adjust its size to image bounds
+        tmp_lay = pdb.gimp_layer_new_from_drawable(img.layers[lay_id], tmp_img)
+        tmp_img.insert_layer(layer=tmp_lay, position=0)
+        pdb.gimp_layer_resize_to_image_size(tmp_lay)
+        # Extract pixel data
+        region = tmp_lay.get_pixel_rgn(0, 0, width, height, False, False)
+        lay_px = array('B', region[0:width, 0:height]) 
+        bpp = region.bpp
+        # Different way of getting data to account for missing alpha channel
+        if tmp_lay.has_alpha:  # overwrite only if alpha value exceeds threshold
+            plt_px = [([lay_px[i], plt_id] if lay_px[i+1] > LAYER_ALPHA_CUTOFF else plt_px[i/bpp]) 
+                      for i in xrange(0, num_px*bpp, bpp)]
+        else:  # overwrite everything
+            plt_px = [[lay_px[i], plt_id] for i in xrange(0, num_px)]
+        # Delete the tmp layer each time (not sure if gimp does it by itself)
+        #pdb.gimp_item_delete(tmp_lay)
+        # Progress update, layer by layer
+        gimp.progress_update(float(plt_id+1)/float(num_layers))
+          
+    # Delete the temp image (not sure if gimp does it by itself)
+    pdb.gimp_image_delete(tmp_img)
+
+    # Progress update, done
     gimp.progress_update(1.0)
-    # Adjust coordinates
+
+    # Adjust coordinates (gimp: top left origin => plt: bottom left origin)
     plt_px = [px for i in range(height) for px in
               plt_px[(height*width)-((i+1)*width):(height*width)-(i*width)]]
     plt_data = struct.pack('<' + str(num_px*2) + 'B',
@@ -169,24 +167,44 @@ def plt_save(img, drawable, filename, raw_filename):
 
 
 def plt_create_layers(img):
+    
+    def get_plt_pos(plt_id, layer_map):
+        # Loop though preceeding plt_ids and check if they are present
+        search_id = plt_id+1
+        while search_id < len(PLT_LAYERS):
+            if PLT_LAYERS[search_id] in layer_map:
+                return layer_map[PLT_LAYERS[search_id]]+1
+            search_id += 1
+        return 0
+    
+    if (not img)
+    {
+        gimp.pdb.gimp_message('Invalid Image.')
+        return;
+    }  
+    
+    # Get the type of layer from image type
     layer_type = GRAYA_IMAGE
     if img.base_type == RGB:
         layer_type = RGBA_IMAGE
     elif img.base_type == INDEXED:
         layer_type = INDEXEDA_IMAGE
-
-    # Get all layers from the current image
-    img_layernames = []
-    for layer in img.layers:
-        img_layernames.append(layer.name.lower())
-
-    for layername in PLT_LAYERS:
+        
+    # Get all layers from the current image, mapped with its index
+    layer_map = {lay.name:i for i, lay in enumerate(img.layers)}
+    image.disable_undo()
+    for plt_lay_id, plt_lay_name in enumerate(PLT_LAYERS):
         # We don't want to create already existing plt layers
-        if layername not in img_layernames:
-            lay = gimp.Layer(img, layername, img.width, img.height,
+        if plt_lay_name not in layer_map:
+            # Insert at the correct position in case the layers exist partially
+            lay_pos = get_plt_pos(plt_lay_id, layer_map)
+            # Create an insert layer
+            lay = gimp.Layer(img, plt_lay_name, img.width, img.height,
                              layer_type, 100, NORMAL_MODE)
             lay.fill(TRANSPARENT_FILL)
-            img.insert_layer(layer=lay, position=0)
+            img.insert_layer(layer=lay, position=lay_pos)
+            
+    image.enable_undo()
 
 
 def register_load_handlers():
@@ -223,12 +241,12 @@ register(
 
 
 register(
-    'file-bioplt-save',  # name
-    'save a Packed Layer Texture (.plt)',  # description
+    'file-bioplt-save',
     'save a Packed Layer Texture (.plt)',
-    'Attila Gyoerkoes',  # author
-    'GPL v3',  # copyright
-    '2015',  # year
+    'save a Packed Layer Texture (.plt)',
+    'Attila Gyoerkoes',
+    'GPL v3',
+    '2015',
     'Packed Layer Texture',
     'RGB*, GRAY*',
     [   # input args (type, name, description, default [, extra])
@@ -237,28 +255,27 @@ register(
         (PF_STRING, "filename", "The name of the file", None),
         (PF_STRING, "raw-filename", "The name of the file", None),
     ],
-    [],  # results (type, name, description)
-    plt_save,  # callback
+    [],
+    plt_save,
     on_query=register_save_handlers,
     menu='<Save>'
 )
 
 
 register(
-    'file-bioplt-createlayers',  # name
-    'Create Packed Layer Texture (.plt)',  # description
+    'file-bioplt-createlayers',
+    'Create Packed Layer Texture (.plt)',
     'Create the layers for a Packed Layer Texture (.plt)',
-    'Attila Gyoerkoes',  # author
-    'GPL v3',  # copyright
-    '2015',  # year
-    'Plt: Create Layers',
-    '*',
+    'Attila Gyoerkoes',
+    'GPL v3',
+    '2015',
+    'Plt: Setup Layers',
+    '',
     [   # input args (type, name, description, default [, extra])
         (PF_IMAGE, "image", "Input image", None)
     ],
-    [],  # results (type, name, description)
-    plt_create_layers,  # callback
-    # on_query = register_save_handlers,
+    [],
+    plt_create_layers,
     menu='<Image>/Tools'
 )
 

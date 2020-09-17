@@ -28,6 +28,7 @@
 
 #define PLT_HEADER_VERSION "PLT V1  "
 #define PLT_NUM_LAYERS 10
+#define PLT_ALPHA_THRESHOLD 25
 
 // New layers can easily be added by extending this list, they
 // will automatically be included
@@ -61,5 +62,8 @@ static GimpPDBStatusType plt_add_layers(gint32 image_id);
 static void flip_plt(uint8_t *pixels,
                      const uint32_t width,
                      const uint32_t height);
+
+static int get_layer_bounds(const gint32 image_id, const gint32 layer_id,
+                            gint *bx, gint *by, gint *bw, gint *bh);
 
 #endif

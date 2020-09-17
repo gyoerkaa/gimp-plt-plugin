@@ -47,6 +47,63 @@ static void flip_plt(uint8_t *pixels,
 }
 
 
+static int get_layer_bounds(gint32 image_id, gint32 layer_id, 
+                             gint *bx, gint *by, gint *bw, gint *bh)
+{
+    gint img_width = gimp_image_width(image_id);
+    gint img_height = gimp_image_height(image_id);
+    gint lay_width  = gimp_drawable_width(layer_id);
+    gint lay_height = gimp_drawable_height(layer_id); 
+    
+    gint lay_x, lay_y;
+    gimp_drawable_offsets(layer_id, &lay_x, &lay_y);
+    
+    if (lay_x < 0)
+    {
+        *bx = -1 * lay_x;
+        if (lay_x + lay_width > img_width)  // layer exceeds image size
+            *bw = lay_width;
+        else if (lay_x + lay_width > 0)  // layer partially within image
+            *bw = lay_x + lay_width;
+        else  // layer out of bounds
+            return FALSE;
+    }
+    else
+    {
+        *bx = 0;
+        if (lay_x >= img_width)  // layer out of bounds
+            return FALSE;
+        else if (lay_x + lay_width > img_width)  // layer partially within image
+            *bw = img_width - lay_x;
+        else  // layer completely within image
+            *bw = lay_width;
+    }
+    
+    if (lay_y < 0)
+    {
+        *by = -1 * lay_y;
+        if (lay_y + lay_height > img_width)  // layer exceeds image size
+            *bh = lay_height;
+        else if (lay_y + lay_height > 0)  // layer partially within image
+            *bh = lay_y + lay_height;
+        else  // layer out of bounds
+            return FALSE;
+    }
+    else
+    {
+        *by = 0;
+        if (lay_y >= img_height)  // layer out of bounds
+            return FALSE;
+        else if (lay_y + lay_height > img_height)  // layer partially within image
+            *bh = img_height - lay_y;
+        else  // layer completely within image
+            *bh = lay_height;
+    }    
+    
+    return TRUE;
+}
+
+
 static void query(void)
 {
     // Load procedure arguments
@@ -70,13 +127,14 @@ static void query(void)
                            "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
-                           "<Load>/Packed Layer Texture",
+                           "Packed Layer Texture",
                            NULL,
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(load_args),
                            G_N_ELEMENTS(load_return_values),
                            load_args,
                            load_return_values);
+    gimp_plugin_menu_register(LOAD_PROCEDURE, "<Load>/Packed Layer Texture");
     // Register Load handlers
     gimp_register_file_handler_mime(LOAD_PROCEDURE, "image/plt");
     gimp_register_load_handler(LOAD_PROCEDURE, "plt", "");
@@ -98,13 +156,14 @@ static void query(void)
                            "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
-                           "<Save>/Packed Layer Texture",
+                           "Packed Layer Texture",
                            "RGB*",
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(save_args),
                            0,
                            save_args,
                            NULL);
+    gimp_plugin_menu_register(SAVE_PROCEDURE, "<Save>/Packed Layer Texture");
     // Register Save handlers
     gimp_register_file_handler_mime(SAVE_PROCEDURE, "image/plt");
     gimp_register_save_handler(SAVE_PROCEDURE, "plt", "");
@@ -123,8 +182,8 @@ static void query(void)
                            "Attila Gyoerkoes",
                            "GPL v3",
                            "2016",
-                           "Add missing plt layers",
-                           "*",
+                           "Plt: Setup Layers",
+                           "",
                            GIMP_PLUGIN,
                            G_N_ELEMENTS(addl_args),
                            0,
@@ -238,18 +297,16 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     uint8_t  plt_version[8];
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
+    uint32_t plt_num_px;
     uint8_t *plt_data;
+    
     uint8_t *layer_data;
-
-    uint8_t px_value = 0;
-    uint8_t px_layer = 0;
-    uint32_t num_px = 0;
-
-    gint32 img_id = -1;
     gint32 layer_id = -1;
+    gint32 plt_layer_ids[PLT_NUM_LAYERS];
+    
+    gint32 img_id = -1;
     GimpPixelRgn region;
     GimpDrawable *drawable;
-    gint32 plt_layer_ids[PLT_NUM_LAYERS];
     guint8 pixel[2] = {0, 255}; // GRAYA image = 2 Channels: Value + Alpha
 
     stream = fopen(filename, "rb");
@@ -305,9 +362,9 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 
     // Read image data
     // Expecting width*height (value, layer) tuples = 2*width*height bytes
-    num_px = plt_width * plt_height;
-    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
-    if (fread(plt_data, 1, 2*num_px, stream) < (2*num_px))
+    plt_num_px = plt_width * plt_height;
+    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*plt_num_px);
+    if (fread(plt_data, 1, 2*plt_num_px, stream) < (2*plt_num_px))
     {
         g_message("Image size mismatch.\n");
         fclose(stream);
@@ -318,7 +375,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
     fclose(stream);
 
     // Write data into layers
-    layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
+    layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*plt_num_px);
     gimp_progress_update(0.0);
     for (i = 0; i < PLT_NUM_LAYERS; i++)
     {
@@ -333,7 +390,7 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
                              0, 0, plt_width, plt_height,
                              TRUE, FALSE);
         // Grab the pixels belonging to this layer
-        for (j = 0; j < 2*num_px; j+=2)
+        for (j = 0; j < 2*plt_num_px; j+=2)
         {
             if (plt_data[j+1] == i)
             {
@@ -370,31 +427,34 @@ static GimpPDBStatusType plt_load(gchar *filename, gint32 *image_id)
 static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 {
     FILE *stream = 0;
-    unsigned int i, j, k;
+    unsigned int i, j, k, l;
 
     uint8_t  plt_version[8] = PLT_HEADER_VERSION;
     uint8_t  plt_info[8] = {10, 0, 0, 0, 0, 0, 0, 0};
     uint32_t plt_width  = 0;
     uint32_t plt_height = 0;
-    uint8_t  plt_id = 0;
     uint8_t *plt_data;
-    uint8_t *layer_data;
 
-    uint32_t num_px = 0;
-    gint32 detected_layers = 0;
+    gint layer_id;
+    gint layer_x, layer_y;
+    uint8_t *layer_data;
+    gchar *layer_name;
+    
+    uint32_t plt_num_px;
+    gint32 detected_layers;
     gint bpp;
-    uint8_t cval;
 
     gint img_num_layers; // num layers in image
     gint *img_layer_ids; // all layers in image
     gint *plt_layer_ids; // valid plt layers
-    gint layer_id;
-    gchar *layer_name;
-
+    gint plt_id;
+    
+    
     GimpImageBaseType img_basetype;
     GimpDrawable *drawable;
     GimpPixelRgn region;
-
+    gint region_x, region_y, region_w, region_h;  // part of the region to get
+    
     // Only get image data if it's valid
     if (!gimp_image_is_valid(image_id))
     {
@@ -413,47 +473,66 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         return (GIMP_PDB_EXECUTION_ERROR);
     }
 
-    // Search for layers containing plt data and save which plt layer
-    // corresponds to which gimp layer
-    // 1. Look for matching names
+    //  Determine which gimp layer to use for which plt layer
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
     plt_layer_ids = g_malloc(sizeof(gint)*PLT_NUM_LAYERS*2);
-    for (j = 0; j < PLT_NUM_LAYERS; j++)
+    for (i = 0; i < PLT_NUM_LAYERS; i++)
     {
-        plt_layer_ids[j] = 0;
-        plt_layer_ids[j+PLT_NUM_LAYERS] = -1;
+        plt_layer_ids[i] = i;
+        plt_layer_ids[i+PLT_NUM_LAYERS] = -1;  // -1 == Invalid layer        
     }
     detected_layers = 0;
-    for (i = 0; i < img_num_layers; i++)
+    // 1. Look for matching names
+    /*
+    for (l = PLT_NUM_LAYERS; l-- > 0; )
     {
-        layer_name = gimp_item_get_name(img_layer_ids[i]);
-        for (j = 0; j < PLT_NUM_LAYERS; j++)
+        plt_layer_ids[l] = l;
+        plt_layer_ids[l+PLT_NUM_LAYERS] = -1;  // -1 == Invalid layer
+        // find a matching gimp layer
+        for (i = 0; i < img_num_layers; i++)
         {
-            if (!g_ascii_strcasecmp(PLT_LAYERS[j], layer_name))
+            layer_name = gimp_item_get_name(img_layer_ids[i]); 
+            if (!g_ascii_strcasecmp(PLT_LAYERS[l], layer_name))
             {
-                plt_layer_ids[detected_layers] = j;
-                plt_layer_ids[detected_layers+PLT_NUM_LAYERS] = img_layer_ids[i];
+                plt_layer_ids[l+PLT_NUM_LAYERS] = img_layer_ids[i];  
                 detected_layers++;
             }
         }
     }
+    */
+    // Start with the top layer to reflect what is displayed in gimp
+    // (NOTE: layer names are unique, so no problems with duplicates)
+    for (l = 0; l < img_num_layers; l++)
+    {
+        layer_name = gimp_item_get_name(img_layer_ids[l]);
+        for (i = 0; i < PLT_NUM_LAYERS; i++)
+        {
+            if (!g_ascii_strcasecmp(PLT_LAYERS[i], layer_name))
+            {
+                // a valid plt layer
+                plt_layer_ids[detected_layers] = i;
+                plt_layer_ids[detected_layers+PLT_NUM_LAYERS] = img_layer_ids[l];  
+                detected_layers++;
+            }
+        }
+    }    
     // 2. Fallback, use the n topmost layers, if no layers have been detected
     // before
     if (detected_layers <= 0)
     {
-        for (j = 0; ((j < PLT_NUM_LAYERS) && (j < img_num_layers)); j++)
+        for (l = 0; ((l < PLT_NUM_LAYERS) && (l < img_num_layers)); l++)
         {
-            plt_layer_ids[detected_layers] = j;
-            plt_layer_ids[detected_layers+PLT_NUM_LAYERS] = img_layer_ids[j];
+            plt_layer_ids[detected_layers] = l;
+            plt_layer_ids[detected_layers+PLT_NUM_LAYERS] = img_layer_ids[l];
             detected_layers++;
         }
     }
     g_free(img_layer_ids);
-
+            
     // Init image data
-    num_px = plt_width * plt_height;
-    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
-    for (i = 0; i < 2*num_px; i+=2)
+    plt_num_px = plt_width * plt_height;
+    plt_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*plt_num_px);
+    for (i = 0; i < 2*plt_num_px; i+=2)
     {
         plt_data[i] = 255;
         plt_data[i+1] = 0;
@@ -468,45 +547,61 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         {
             // Same buffer for images with or without alpha to avoid having to
             // allocate in loop
-            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*num_px);
-            for (i = 0; i < detected_layers; i++)
+            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*2*plt_num_px);
+            
+            for (l = 0; l < PLT_NUM_LAYERS; l++)
             {
-                plt_id = plt_layer_ids[i];
-                layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
-                drawable = gimp_drawable_get(layer_id);
-                bpp = gimp_drawable_bpp(layer_id);
-                gimp_pixel_rgn_init(&region, drawable,
-                                    0, 0,
-                                    plt_width, plt_height,
-                                    FALSE, FALSE);
-                gimp_pixel_rgn_get_rect(&region,
-                                        (uint8_t*) layer_data,
-                                        0, 0,
-                                        plt_width, plt_height);
-                if (gimp_drawable_has_alpha(layer_id))
+                plt_id   = plt_layer_ids[l];  
+                layer_id = plt_layer_ids[l+PLT_NUM_LAYERS];                                
+                
+                if ((layer_id >= 0) && get_layer_bounds(image_id, layer_id, &region_x, &region_y, &region_w, &region_h))
                 {
+                    drawable = gimp_drawable_get(layer_id);
+                    bpp = gimp_drawable_bpp(layer_id);
+                
+                    gimp_pixel_rgn_init(&region, drawable,
+                                        region_x, region_y,
+                                        region_w, region_h,
+                                        FALSE, FALSE);
+                    gimp_pixel_rgn_get_rect(&region,
+                                            (uint8_t*) layer_data,
+                                            region_x, region_y,
+                                            region_w, region_h);
+                    
                     k = 0;
-                    for (j = 0; j < bpp*num_px; j+=bpp)
+                    gimp_drawable_offsets(layer_id, &layer_x, &layer_y);
+                    // layer bounds are already adjusted to adress layers being out of bounds
+                    // we still need to adjust plt pixel index 
+                    layer_x = (layer_x > 0) ? layer_x : 0;
+                    layer_y = (layer_y > 0) ? layer_y : 0;
+                    if (gimp_drawable_has_alpha(layer_id))
                     {
-                        cval = layer_data[j];
-                        if (layer_data[j+1] > 0)
+                        for (i = 0; i < region_h; i++)
                         {
-                            plt_data[k] = cval;
-                            plt_data[k+1] = plt_id;
+                            for (j = 0; j < region_w; j++)
+                            {                                
+                                if (layer_data[k+1] > PLT_ALPHA_THRESHOLD)
+                                {
+                                    plt_data[2*((i+layer_y)*plt_width+j+layer_x)] = layer_data[k];
+                                    plt_data[2*((i+layer_y)*plt_width+j+layer_x)+1] = plt_id;
+                                }
+                                k+=bpp;
+                            }                            
                         }
-                        k+=2;
                     }
-                }
-                else
-                {
-                    // No alpha value means bottom layers are not visible
-                    // i.e. always overwrite everything
-                    k = 0;
-                    for (j = 0; j < bpp*num_px; j+=bpp)
+                    else
                     {
-                        plt_data[j] = layer_data[j];
-                        plt_data[j+1] = plt_id;
-                        k+=2;
+                        // No alpha value means bottom layers are not visible
+                        // i.e. always overwrite everything
+                        for (i = 0; i < region_h; i++)
+                        {
+                            for (j = 0; j < region_w; j++)
+                            {
+                                plt_data[2*((i+layer_y)*plt_width+j+layer_x)] = layer_data[k];
+                                plt_data[2*((i+layer_y)*plt_width+j+layer_x)+1] = plt_id;
+                                k += bpp;
+                            }                            
+                        }
                     }
                 }
                 gimp_progress_update((float) i/(float) detected_layers);
@@ -517,50 +612,60 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
         {
             // Same buffer for images with or without alpha to avoid having to
             // allocate in loop
-            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*num_px*4);
-            for (i = 0; i < detected_layers; i++)
+            layer_data = (uint8_t*) g_malloc(sizeof(uint8_t)*plt_num_px*4);
+                                
+            for (l = 0; l < PLT_NUM_LAYERS; l++)
             {
-                plt_id = plt_layer_ids[i];
-                layer_id = plt_layer_ids[i+PLT_NUM_LAYERS];
-                drawable = gimp_drawable_get(layer_id);
-                bpp = gimp_drawable_bpp(layer_id);
-                gimp_pixel_rgn_init(&region, drawable,
-                                    0, 0,
-                                    plt_width, plt_height,
-                                    FALSE, FALSE);
-                gimp_pixel_rgn_get_rect(&region,
-                                        (uint8_t*) layer_data,
-                                        0, 0,
-                                        plt_width, plt_height);
-                if (gimp_drawable_has_alpha(layer_id))
+                plt_id   = plt_layer_ids[l];  
+                layer_id = plt_layer_ids[l+PLT_NUM_LAYERS];                                
+                
+                if ((layer_id >= 0) && get_layer_bounds(image_id, layer_id, &region_x, &region_y, &region_w, &region_h))
                 {
+                    drawable = gimp_drawable_get(layer_id);
+                    bpp = gimp_drawable_bpp(layer_id);
+                
+                    gimp_pixel_rgn_init(&region, drawable,
+                                        region_x, region_y,
+                                        region_w, region_h,
+                                        FALSE, FALSE);
+                    gimp_pixel_rgn_get_rect(&region,
+                                            (uint8_t*) layer_data,
+                                            0, 0,
+                                            region_w, region_h);
                     k = 0;
-                    for (j = 0; j < bpp*num_px; j+=bpp)
+                    gimp_drawable_offsets(layer_id, &layer_x, &layer_y);
+                    // layer bounds are already adjusted to adress layers being out of bounds
+                    // we still need to adjust plt pixel index 
+                    layer_x = (layer_x > 0) ? layer_x : 0;
+                    layer_y = (layer_y > 0) ? layer_y : 0;
+                    if (gimp_drawable_has_alpha(layer_id))
                     {
-                        cval = (layer_data[j] +
-                                layer_data[j+1] +
-                                layer_data[j+2])/3;
-                        if (layer_data[j+3] > 0)
+                        for (i = 0; i < region_h; i++)
                         {
-                            plt_data[k] = cval;
-                            plt_data[k+1] = plt_id;
+                            for (j = 0; j < region_w; j++)
+                            {                                
+                                if (layer_data[k+3] > PLT_ALPHA_THRESHOLD)
+                                {
+                                    plt_data[2*((i+layer_y)*plt_width+j+layer_x)] = (layer_data[k] + layer_data[k+1] + layer_data[k+2])/3;
+                                    plt_data[2*((i+layer_y)*plt_width+j+layer_x)+1] = plt_id;
+                                }
+                                k+=bpp;
+                            }                            
                         }
-                        k+=2;
                     }
-                }
-                else
-                {
-                    // No alpha value means bottom layers are not visible
-                    // i.e. always overwrite everything
-                    k = 0;
-                    for (j = 0; j < bpp*num_px; j+=bpp)
+                    else
                     {
-                        cval = (layer_data[j] +
-                                layer_data[j+1] +
-                                layer_data[j+2])/3;
-                        plt_data[k] = cval;
-                        plt_data[k+1] = plt_id;
-                        k+=2;
+                        // No alpha value means bottom layers are not visible
+                        // i.e. always overwrite everything
+                        for (i = 0; i < region_h; i++)
+                        {
+                            for (j = 0; j < region_w; j++)
+                            {
+                                plt_data[2*((i+layer_y)*plt_width+j+layer_x)]= (layer_data[k] + layer_data[k+1] + layer_data[k+2])/3;
+                                plt_data[2*((i+layer_y)*plt_width+j+layer_x)+1] = plt_id;
+                                k += bpp;
+                            }                            
+                        }
                     }
                 }
                 gimp_progress_update((float) i/(float) detected_layers);
@@ -589,7 +694,7 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
     fwrite(&plt_width, 4, 1, stream);
     fwrite(&plt_height, 4, 1, stream);
     // Write image data
-    fwrite(plt_data, 1, 2*num_px, stream);
+    fwrite(plt_data, 1, 2*plt_num_px, stream);
     fclose(stream);
 
     g_free(plt_data);
@@ -600,15 +705,20 @@ static GimpPDBStatusType plt_save(gchar *filename, gint32 image_id)
 
 static GimpPDBStatusType plt_add_layers(gint32 image_id)
 {
+    if (!gimp_image_is_valid(image_id))
+    {
+        g_message("Invalid Image.\n");
+        return (GIMP_PDB_EXECUTION_ERROR);
+    }   
     unsigned int i, j;
     GimpImageBaseType img_basetype;
     gint img_num_layers;
     gint *img_layer_ids;
     gint img_width = 0;
     gint img_height = 0;
-    gboolean plt_layer_detected = FALSE;
     GimpImageType layer_type= GIMP_GRAYA_IMAGE;
     gint32 layer_id;
+    gint32 layer_pos;
 
     // Set type of the layer depending on the type of the image
     img_basetype = gimp_image_base_type(image_id);
@@ -634,33 +744,50 @@ static GimpPDBStatusType plt_add_layers(gint32 image_id)
 
     // We don't want to create already existing plt layers
     // Get all layers from the current image and look for missing layers
-    //TODO
     img_width  = gimp_image_width(image_id);
     img_height = gimp_image_height(image_id);
     img_layer_ids = gimp_image_get_layers(image_id, &img_num_layers);
+    gimp_image_undo_group_start(image_id);
     for (i = 0; i < PLT_NUM_LAYERS; i++)
     {
-        plt_layer_detected = FALSE;
+        layer_pos = -1;  // plt layer not present, need to insert
         for (j = 0; j < img_num_layers; j++)
         {
             if (!g_ascii_strcasecmp(PLT_LAYERS[i], gimp_item_get_name(img_layer_ids[j])))
             {
-                plt_layer_detected = TRUE;
+                layer_pos = j;
                 break;
             }
         }
-        if (!plt_layer_detected)
+        if (layer_pos < 0)
         {
+            // Determine position of new layer, previous layers should have already
+            // been inserted, so we search for the previous one in the list
+            if (i>0)
+            {
+                for (j = 0; j < img_num_layers; j++)
+                {
+                    if (!g_ascii_strcasecmp(PLT_LAYERS[i-1], gimp_item_get_name(img_layer_ids[j])))
+                    {
+                        layer_pos = j;
+                        break;
+                    }
+                }     
+            }
+            else
+            {
+                layer_pos = img_num_layers;
+            }
             layer_id = gimp_layer_new(image_id,
                                       PLT_LAYERS[i],
                                       img_width, img_height,
                                       layer_type,
                                       100.0,
                                       GIMP_NORMAL_MODE);
-            gimp_image_insert_layer(image_id, layer_id, 0, 0);
+            gimp_image_insert_layer(image_id, layer_id, 0, layer_pos);
         }
     }
-
+    gimp_image_undo_group_end(image_id);
     g_free(img_layer_ids);
     return (GIMP_PDB_SUCCESS);
 }

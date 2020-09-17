@@ -177,11 +177,9 @@ def plt_create_layers(img):
             search_id += 1
         return 0
     
-    if (not img)
-    {
+    if not img:
         gimp.pdb.gimp_message('Invalid Image.')
-        return;
-    }  
+        return
     
     # Get the type of layer from image type
     layer_type = GRAYA_IMAGE
@@ -192,7 +190,6 @@ def plt_create_layers(img):
         
     # Get all layers from the current image, mapped with its index
     layer_map = {lay.name:i for i, lay in enumerate(img.layers)}
-    image.disable_undo()
     for plt_lay_id, plt_lay_name in enumerate(PLT_LAYERS):
         # We don't want to create already existing plt layers
         if plt_lay_name not in layer_map:
@@ -203,8 +200,6 @@ def plt_create_layers(img):
                              layer_type, 100, NORMAL_MODE)
             lay.fill(TRANSPARENT_FILL)
             img.insert_layer(layer=lay, position=lay_pos)
-            
-    image.enable_undo()
 
 
 def register_load_handlers():
